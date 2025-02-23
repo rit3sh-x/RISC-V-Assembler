@@ -26,9 +26,7 @@ private:
     static std::vector<Token> tokenizeLine(const std::string& line, int lineNumber);
     static bool isRegister(const std::string& token);
     static bool isImmediate(const std::string& token);
-    static bool isMemoryAccess(const std::string& token);
     static bool isLabel(const std::string& token);
-    static void parseMemoryAccess(const std::string& token, Token& memToken, int lineNumber);
     static std::string tokenTypeToString(TokenType type);
 };
 
@@ -53,7 +51,9 @@ std::string Lexer::tokenTypeToString(TokenType type) {
 
 bool Lexer::isRegister(const std::string& token) {
     if (token.size() <= 1 || token[0] != 'x') return false;
-    int regNum = std::stoi(token.substr(1));
+    std::string regNumStr = token.substr(1);
+    if (!std::all_of(regNumStr.begin(), regNumStr.end(), ::isdigit)) return false;
+    int regNum = std::stoi(regNumStr);
     return regNum >= 0 && regNum <= 31;
 }
 
@@ -67,46 +67,14 @@ bool Lexer::isImmediate(const std::string& token) {
     return std::all_of(token.begin() + pos, token.end(), ::isdigit);
 }
 
-bool Lexer::isMemoryAccess(const std::string& token) {
-    size_t openParen = token.find('(');
-    size_t closeParen = token.find(')');
-    return openParen != std::string::npos && closeParen != std::string::npos && openParen < closeParen;
-}
-
 bool Lexer::isLabel(const std::string& token) {
     return !token.empty() && token.back() == ':';
-}
-
-void Lexer::parseMemoryAccess(const std::string& token, Token& memToken, int lineNumber) {
-    size_t openParen = token.find('(');
-    size_t closeParen = token.find(')', openParen);
-    if (openParen == std::string::npos || closeParen == std::string::npos || openParen >= closeParen) {
-        std::cerr << "Syntax Error (Line " << lineNumber << "): Invalid memory access format '" << token << "'\n";
-        return;
-    }
-
-    std::string offsetStr = token.substr(0, openParen);
-    std::string regStr = token.substr(openParen + 1, closeParen - openParen - 1);
-
-    if (!offsetStr.empty() && !isImmediate(offsetStr)) {
-        std::cerr << "Syntax Error (Line " << lineNumber << "): Invalid offset in memory access '" << token << "'\n";
-        return;
-    }
-
-    if (!isRegister(regStr)) {
-        std::cerr << "Syntax Error (Line " << lineNumber << "): Invalid register in memory access '" << token << "'\n";
-        return;
-    }
-
-    memToken.type = MEMORY;
-    memToken.value = offsetStr + "(" + regStr + ")";
 }
 
 std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) {
     std::vector<Token> tokens;
     std::stringstream ss(line);
     std::string token;
-    int tokenIndex = 0;
 
     while (ss >> token) {
         if (!token.empty() && token.back() == ',') {
@@ -114,8 +82,15 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
         }
         
         if (token == "#" || token == "//") break;
+        token = trim(token);
+
+        if (token.empty()) {
+            tokens.push_back({UNKNOWN, ""});
+            continue;
+        }
 
         Token classifiedToken = {UNKNOWN, token};
+
         if (opcodes.count(token)) {
             classifiedToken.type = OPCODE;
         } else if (directives.count(token)) {
@@ -124,15 +99,20 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
             classifiedToken.type = REGISTER;
         } else if (isImmediate(token)) {
             classifiedToken.type = IMMEDIATE;
-        } else if (isMemoryAccess(token)) {
-            parseMemoryAccess(token, classifiedToken, lineNumber);
         } else if (isLabel(token)) {
             classifiedToken.type = LABEL;
-        } else if (classifiedToken.type == UNKNOWN && tokenIndex != 0) {
-            classifiedToken.type = LABEL;
+        } else if (token.find('(') != std::string::npos && token.find(')') != std::string::npos) {
+            size_t openParen = token.find('(');
+            size_t closeParen = token.find(')');
+            std::string offsetStr = token.substr(0, openParen);
+            std::string regStr = token.substr(openParen + 1, closeParen - openParen - 1);
+
+            tokens.push_back({IMMEDIATE, offsetStr});
+            tokens.push_back({REGISTER, regStr});
+            continue;
         }
-        tokenIndex++;
-        if(classifiedToken.value != "") tokens.push_back(classifiedToken);
+
+        tokens.push_back(classifiedToken);
     }
 
     return tokens;

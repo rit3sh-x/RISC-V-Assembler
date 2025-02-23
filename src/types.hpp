@@ -13,7 +13,8 @@ enum TokenType {
     LABEL,
     DIRECTIVE,
     COMMA,
-    UNKNOWN
+    UNKNOWN,
+    ERROR
 };
 
 std::unordered_set<std::string> opcodes = {

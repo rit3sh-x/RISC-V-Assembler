@@ -2,3 +2,4 @@ directions.txt
 input.asm
 /*.exe
 /.vscode/
+/src/test.hpp

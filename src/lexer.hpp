@@ -9,6 +9,8 @@
 #include <algorithm>
 #include "types.hpp"
 
+using namespace riscv;
+
 struct Token {
     TokenType type;
     std::string value;
@@ -42,16 +44,16 @@ std::string Lexer::trim(const std::string& str) {
 
 std::string Lexer::tokenTypeToString(TokenType type) {
     switch (type) {
-        case OPCODE: return "OPCODE";
-        case REGISTER: return "REGISTER";
-        case IMMEDIATE: return "IMMEDIATE";
-        case MEMORY: return "MEMORY";
-        case LABEL: return "LABEL";
-        case DIRECTIVE: return "DIRECTIVE";
-        case STRING: return "STRING";
-        case ERROR: return "ERROR";
-        case STANDALONE: return "STANDALONE";
-        case UNKNOWN: return "UNKNOWN";
+        case TokenType::OPCODE: return "OPCODE";
+        case TokenType::REGISTER: return "REGISTER";
+        case TokenType::IMMEDIATE: return "IMMEDIATE";
+        case TokenType::MEMORY: return "MEMORY";
+        case TokenType::LABEL: return "LABEL";
+        case TokenType::DIRECTIVE: return "DIRECTIVE";
+        case TokenType::STRING: return "STRING";
+        case TokenType::ERROR: return "ERROR";
+        case TokenType::STANDALONE: return "STANDALONE";
+        case TokenType::UNKNOWN: return "UNKNOWN";
         default: return "INVALID";
     }
 }
@@ -115,36 +117,36 @@ bool Lexer::isMemory(const std::string& token, std::string& offset, std::string&
 
 Token Lexer::classifyToken(const std::string& token, int lineNumber) {
     std::string trimmed = trim(token);
-    if (trimmed.empty()) return {UNKNOWN, "", lineNumber};
+    if (trimmed.empty()) return {TokenType::UNKNOWN, "", lineNumber};
 
     std::string offset, reg;
     if (isMemory(trimmed, offset, reg)) {
-        return {MEMORY, trimmed, lineNumber};
+        return {TokenType::MEMORY, trimmed, lineNumber};
     }
     if (standaloneOpcodes.count(trimmed)) {
-        return {STANDALONE, trimmed, lineNumber};
+        return {TokenType::STANDALONE, trimmed, lineNumber};
     }
     if (opcodes.count(trimmed)) {
-        return {OPCODE, trimmed, lineNumber};
+        return {TokenType::OPCODE, trimmed, lineNumber};
     }
     if (isDirective(trimmed)) {
-        return {DIRECTIVE, trimmed, lineNumber};
+        return {TokenType::DIRECTIVE, trimmed, lineNumber};
     }
     if (isRegister(trimmed)) {
-        return {REGISTER, trimmed, lineNumber};
+        return {TokenType::REGISTER, trimmed, lineNumber};
     }
     if (isImmediate(trimmed)) {
-        return {IMMEDIATE, trimmed, lineNumber};
+        return {TokenType::IMMEDIATE, trimmed, lineNumber};
     }
     if (isLabel(trimmed)) {
         std::string labelName = trimmed.substr(0, trimmed.length() - 1);
         definedLabels.insert(labelName);
-        return {LABEL, trimmed, lineNumber};
+        return {TokenType::LABEL, labelName, lineNumber};
     }
     if (definedLabels.count(trimmed)) {
-        return {LABEL, trimmed, lineNumber};
+        return {TokenType::LABEL, trimmed, lineNumber};
     }
-    return {UNKNOWN, trimmed, lineNumber};
+    return {TokenType::UNKNOWN, trimmed, lineNumber};
 }
 
 std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) {
@@ -166,9 +168,9 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
             if (!token.empty()) {
                 Token t = classifyToken(token, lineNumber);
                 tokens.push_back(t);
-                lastWasOpcode = (t.type == OPCODE || t.type == STANDALONE);
-                if (t.type == OPCODE) expectOperand = true;
-                else if (expectOperand && (t.type == REGISTER || t.type == IMMEDIATE || t.type == MEMORY)) expectOperand = false;
+                lastWasOpcode = (t.type == TokenType::OPCODE || t.type == TokenType::STANDALONE);
+                if (t.type == TokenType::OPCODE) expectOperand = true;
+                else if (expectOperand && (t.type == TokenType::REGISTER || t.type == TokenType::IMMEDIATE || t.type == TokenType::MEMORY)) expectOperand = false;
                 token.clear();
             }
             break;
@@ -180,20 +182,19 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
                 if (!token.empty()) {
                     Token t = classifyToken(token, lineNumber);
                     tokens.push_back(t);
-                    lastWasOpcode = (t.type == OPCODE || t.type == STANDALONE);
-                    if (t.type == OPCODE) expectOperand = true;
-                    // Check next character if it's an OPCODE or STANDALONE
+                    lastWasOpcode = (t.type == TokenType::OPCODE || t.type == TokenType::STANDALONE);
+                    if (t.type == TokenType::OPCODE) expectOperand = true;
                     if (lastWasOpcode && i + 1 < trimmedLine.length() && trimmedLine[i + 1] == ',') {
-                        tokens.push_back({ERROR, "Unexpected comma after opcode", lineNumber});
+                        tokens.push_back({TokenType::ERROR, "Unexpected comma after opcode", lineNumber});
                         lastWasOpcode = false;
                         expectOperand = false;
-                        i++; // Skip the comma
+                        i++;
                     }
                     token.clear();
                 }
             } else {
                 inString = false;
-                tokens.push_back({STRING, token, lineNumber});
+                tokens.push_back({TokenType::STRING, token, lineNumber});
                 lastWasOpcode = false;
                 token.clear();
             }
@@ -205,17 +206,16 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
             if (!token.empty()) {
                 Token t = classifyToken(token, lineNumber);
                 tokens.push_back(t);
-                lastWasOpcode = (t.type == OPCODE || t.type == STANDALONE);
-                if (t.type == OPCODE) expectOperand = true;
-                else if (expectOperand && (t.type == REGISTER || t.type == IMMEDIATE || t.type == MEMORY)) expectOperand = false;
+                lastWasOpcode = (t.type == TokenType::OPCODE || t.type == TokenType::STANDALONE);
+                if (t.type == TokenType::OPCODE) expectOperand = true;
+                else if (expectOperand && (t.type == TokenType::REGISTER || t.type == TokenType::IMMEDIATE || t.type == TokenType::MEMORY)) expectOperand = false;
                 token.clear();
                 expectValueAfterComma = false;
-                // Check next character if it's an OPCODE or STANDALONE
                 if (lastWasOpcode && i + 1 < trimmedLine.length() && trimmedLine[i + 1] == ',') {
-                    tokens.push_back({ERROR, "Unexpected comma after opcode", lineNumber});
+                    tokens.push_back({TokenType::ERROR, "Unexpected comma after opcode", lineNumber});
                     lastWasOpcode = false;
                     expectOperand = false;
-                    i++; // Skip the comma
+                    i++;
                 }
             }
         }
@@ -223,20 +223,19 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
             if (!token.empty()) {
                 Token t = classifyToken(token, lineNumber);
                 tokens.push_back(t);
-                lastWasOpcode = (t.type == OPCODE || t.type == STANDALONE);
-                if (t.type == OPCODE) expectOperand = true;
-                else if (expectOperand && (t.type == REGISTER || t.type == IMMEDIATE || t.type == MEMORY)) expectOperand = false;
+                lastWasOpcode = (t.type == TokenType::OPCODE || t.type == TokenType::STANDALONE);
+                if (t.type == TokenType::OPCODE) expectOperand = true;
+                else if (expectOperand && (t.type == TokenType::REGISTER || t.type == TokenType::IMMEDIATE || t.type == TokenType::MEMORY)) expectOperand = false;
                 token.clear();
-                // Check next character if it's an OPCODE or STANDALONE
                 if (lastWasOpcode && i + 1 < trimmedLine.length() && trimmedLine[i + 1] == ',') {
-                    tokens.push_back({ERROR, "Unexpected comma after opcode", lineNumber});
+                    tokens.push_back({TokenType::ERROR, "Unexpected comma after opcode", lineNumber});
                     lastWasOpcode = false;
                     expectOperand = false;
-                    i++; // Skip the comma
+                    i++;
                 }
             }
-            if (lastWasOpcode && tokens.back().type != ERROR) {
-                tokens.push_back({ERROR, "Unexpected comma after opcode", lineNumber});
+            if (lastWasOpcode && tokens.back().type != TokenType::ERROR) {
+                tokens.push_back({TokenType::ERROR, "Unexpected comma after opcode", lineNumber});
                 lastWasOpcode = false;
                 expectOperand = false;
                 expectValueAfterComma = false;
@@ -253,20 +252,20 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
     if (!token.empty()) {
         Token t = classifyToken(token, lineNumber);
         tokens.push_back(t);
-        lastWasOpcode = (t.type == OPCODE || t.type == STANDALONE);
-        if (t.type == OPCODE) expectOperand = true;
-        else if (expectOperand && (t.type == REGISTER || t.type == IMMEDIATE || t.type == MEMORY)) expectOperand = false;
+        lastWasOpcode = (t.type == TokenType::OPCODE || t.type == TokenType::STANDALONE);
+        if (t.type == TokenType::OPCODE) expectOperand = true;
+        else if (expectOperand && (t.type == TokenType::REGISTER || t.type == TokenType::IMMEDIATE || t.type == TokenType::MEMORY)) expectOperand = false;
         expectValueAfterComma = false;
     }
 
     if (inString) {
-        tokens.push_back({ERROR, "Unterminated string: \"" + token + "\"", lineNumber});
+        tokens.push_back({TokenType::ERROR, "Unterminated string: \"" + token + "\"", lineNumber});
     }
-    if (expectOperand && !tokens.empty() && tokens.back().type != ERROR) {
-        tokens.push_back({ERROR, "Missing operand after opcode", lineNumber});
+    if (expectOperand && !tokens.empty() && tokens.back().type != TokenType::ERROR) {
+        tokens.push_back({TokenType::ERROR, "Missing operand after opcode", lineNumber});
     }
-    if (expectValueAfterComma && !tokens.empty() && tokens.back().type != ERROR) {
-        tokens.push_back({ERROR, "Missing operand after comma", lineNumber});
+    if (expectValueAfterComma && !tokens.empty() && tokens.back().type != TokenType::ERROR) {
+        tokens.push_back({TokenType::ERROR, "Missing operand after comma", lineNumber});
     }
 
     return tokens;
@@ -274,6 +273,7 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
 
 std::vector<std::vector<Token>> Lexer::Tokenizer(const std::string& filename) {
     std::vector<std::vector<Token>> tokenizedLines;
+    std::vector<Token*> unknownTokens;
     std::ifstream inputFile(filename);
     if (!inputFile.is_open()) {
         std::cerr << "Error: Could not open file '" << filename << "'\n";
@@ -288,16 +288,26 @@ std::vector<std::vector<Token>> Lexer::Tokenizer(const std::string& filename) {
         std::vector<Token> tokens = tokenizeLine(line, lineNumber);
         if (!tokens.empty()) {
             tokenizedLines.push_back(tokens);
-            for (const auto& token : tokens) {
-                if (token.type == ERROR) {
-                    std::cout << std::endl;
+            for (Token& token : tokenizedLines.back()) {
+                if (token.type == TokenType::ERROR) {
+                    std::cout << "Error on line " << token.lineNumber << ": " << token.value << std::endl;
                     inputFile.close();
                     return tokenizedLines;
+                }
+                else if (token.type == TokenType::UNKNOWN) {
+                    unknownTokens.push_back(&token);
                 }
             }
         }
     }
     inputFile.close();
+
+    for (Token* token : unknownTokens) {
+        if (definedLabels.count(token->value)) {
+            token->type = TokenType::LABEL;
+        }
+    }
+
     return tokenizedLines;
 }
 

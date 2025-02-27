@@ -5,22 +5,22 @@
 #include <unordered_map>
 #include <string>
 
-enum TokenType
-{
-    OPCODE,
-    REGISTER,
-    IMMEDIATE,
-    MEMORY,
-    LABEL,
-    DIRECTIVE,
-    UNKNOWN,
-    ERROR,
-    STRING,
-    STANDALONE
-};
-
 namespace riscv
 {
+    enum TokenType
+    {
+        OPCODE,
+        REGISTER,
+        IMMEDIATE,
+        MEMORY,
+        LABEL,
+        DIRECTIVE,
+        UNKNOWN,
+        ERROR,
+        STRING,
+        STANDALONE
+    };
+
     static std::unordered_set<std::string> definedLabels;
 
     static const std::unordered_set<std::string> opcodes = {

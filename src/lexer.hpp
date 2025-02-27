@@ -15,8 +15,7 @@ struct Token {
     TokenType type;
     std::string value;
     int lineNumber;
-    bool isNumber;
-    Token(TokenType t, const std::string& v, int ln) : type(t), value(v), lineNumber(ln), isNumber(false) {}
+    Token(TokenType t, const std::string& v, int ln) : type(t), value(v), lineNumber(ln) {}
 };
 
 class Lexer {
@@ -134,9 +133,7 @@ Token Lexer::classifyToken(const std::string& token, int lineNumber) {
         return {TokenType::REGISTER, trimmed, lineNumber};
     }
     if (isImmediate(trimmed)) {
-        Token t(TokenType::IMMEDIATE, trimmed, lineNumber);
-        t.isNumber = true;
-        return t;
+        return {TokenType::IMMEDIATE, trimmed, lineNumber};
     }
     if (isLabel(trimmed)) {
         std::string labelName = trimmed.substr(0, trimmed.length() - 1);

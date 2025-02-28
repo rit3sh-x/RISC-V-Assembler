@@ -59,7 +59,6 @@ private:
     void addLabel(const std::string& label);
     uint32_t resolveLabel(const std::string& label) const;
     void reportError(const std::string& message, int lineNumber = 0) const;
-    void validateSectionState() const;
     std::vector<Token>::const_iterator findNextDirectiveOrOpcode(const std::vector<Token>& line, std::vector<Token>::const_iterator start) const;
 };
 
@@ -86,8 +85,8 @@ std::vector<Token>::const_iterator Parser::findNextDirectiveOrOpcode(const std::
 
 bool Parser::processFirstPass() {
     currentAddress = TEXT_BASE_ADDRESS;
-    inTextSection = false;
-    inDataSection = true;
+    inTextSection = true;
+    inDataSection = false;
     lastLabel.clear();
     symbolTable.clear();
 
@@ -108,6 +107,9 @@ bool Parser::processFirstPass() {
             inDataSection = false;
             currentAddress = TEXT_BASE_ADDRESS;
             continue;
+        } else{
+            inTextSection = true;
+            inDataSection = false;
         }
 
         while (tokenIndex < line.size()) {
@@ -124,43 +126,20 @@ bool Parser::processFirstPass() {
                 handleDirective(dataPathTokens);
                 continue;
             } else if (currentToken.type == TokenType::LABEL && inTextSection) {
-                // Record label and its address
                 addLabel(currentToken.value);
                 tokenIndex++;
-                
-                // Check if there's an instruction after the label
+
                 if (tokenIndex < line.size() && 
-                    (line[tokenIndex].type == TokenType::OPCODE || 
-                     line[tokenIndex].type == TokenType::STANDALONE)) {
-                    // Skip instruction handling, just update address
+                    (line[tokenIndex].type == TokenType::OPCODE || line[tokenIndex].type == TokenType::STANDALONE)) {
                     currentAddress += INSTRUCTION_SIZE;
-                    
-                    // Skip the rest of this instruction
-                    while (tokenIndex < line.size() && 
-                           line[tokenIndex].type != TokenType::DIRECTIVE && 
-                           line[tokenIndex].type != TokenType::LABEL) {
-                        tokenIndex++;
-                    }
+                    break;
                 }
-            } else if (currentToken.type == TokenType::OPCODE || 
-                       currentToken.type == TokenType::STANDALONE) {
-                // Just update address counter, don't process the instruction yet
+            } else if (currentToken.type == TokenType::OPCODE || currentToken.type == TokenType::STANDALONE) {
                 currentAddress += INSTRUCTION_SIZE;
-                
-                // Skip to the next instruction or directive
-                while (tokenIndex < line.size() && 
-                       line[tokenIndex].type != TokenType::DIRECTIVE && 
-                       line[tokenIndex].type != TokenType::LABEL) {
-                    tokenIndex++;
-                }
-            } else {
-                // Skip other tokens
-                tokenIndex++;
+                break;
             }
         }
     }
-    
-    // Success if no errors during label collection
     return !hasErrors();
 }
 
@@ -201,12 +180,15 @@ void Parser::handleDirective(const std::vector<Token>& line) {
             reportError("Invalid or missing string literal for " + directive + " directive", line[0].lineNumber);
             return;
         }
-
+    
         entry.stringValue = line[tokenIndex].value;
         entry.isString = true;
+        uint32_t stringSize = entry.stringValue.length() + ((directive == ".ascii") ? 0 : 1);
+        uint32_t originalAddress = currentAddress;
+        currentAddress += stringSize;
 
-        currentAddress += entry.stringValue.length() + (directive == ".ascii" ? 0 : 1);
         currentAddress = (currentAddress + 3) & ~3;
+        entry.address = originalAddress;
     } else {
         if (tokenIndex >= line.size()) {
             reportError("Missing value(s) for " + directive + " directive", line[0].lineNumber);
@@ -272,23 +254,21 @@ void Parser::handleDirective(const std::vector<Token>& line) {
 
     if (!label.empty()) {
         symbolTable[label] = entry;
-        std::cout << "Added label " << label << " with address 0x" << std::hex << entry.address << std::dec << std::endl;
     }
 }
 
 void Parser::addLabel(const std::string& label) {
-    validateSectionState();
     if (symbolTable.find(label) != symbolTable.end()) {
         reportError("Duplicate label '" + label + "' found", 0);
     } else {
-        symbolTable[label] = {currentAddress, ""};
+        symbolTable[label] = {currentAddress, false, {}, ""};
         lastLabel = label;
     }
 }
 
 bool Parser::processSecondPass() {
     currentAddress = TEXT_BASE_ADDRESS;
-    inTextSection = false;
+    inTextSection = true;
     inDataSection = false;
     parsedInstructions.clear();
     lastLabel.clear();
@@ -300,56 +280,36 @@ bool Parser::processSecondPass() {
         size_t tokenIndex = 0;
         int lineNumber = line[0].lineNumber;
 
+        if(line[0].type == TokenType::DIRECTIVE && line[0].value == ".data") {
+            inDataSection = true;
+            inTextSection = false;
+            currentAddress = DATA_BASE_ADDRESS;
+            continue;
+        } else if(line[0].type == TokenType::DIRECTIVE && line[0].value == ".text") {
+            inTextSection = true;
+            inDataSection = false;
+            currentAddress = TEXT_BASE_ADDRESS;
+            continue;
+        } else{
+            inTextSection = true;
+            inDataSection = false;
+        }
+
         while (tokenIndex < line.size()) {
             const Token& currentToken = line[tokenIndex];
 
-            if (currentToken.type == TokenType::DIRECTIVE) {
-                if (currentToken.value == ".data") {
-                    inDataSection = true;
-                    inTextSection = false;
-                    currentAddress = DATA_BASE_ADDRESS;
-                    tokenIndex++;
-                    continue;
-                } else if (currentToken.value == ".text") {
-                    inTextSection = true;
-                    inDataSection = false;
-                    currentAddress = TEXT_BASE_ADDRESS;
-                    tokenIndex++;
-                    continue;
-                } else {
-                    // Skip directives in second pass, just advance the address
-                    std::vector<Token> directiveTokens;
-                    directiveTokens.push_back(currentToken);
-                    tokenIndex++;
-                    
-                    while (tokenIndex < line.size() && 
-                           line[tokenIndex].type != TokenType::DIRECTIVE && 
-                           line[tokenIndex].type != TokenType::OPCODE &&
-                           line[tokenIndex].type != TokenType::STANDALONE) {
-                        directiveTokens.push_back(line[tokenIndex]);
-                        tokenIndex++;
-                    }
-                    
-                    handleDirective(directiveTokens);
-                    continue;
-                }
-            } else if (currentToken.type == TokenType::LABEL) {
-                // Update label address
+            if (currentToken.type == TokenType::LABEL) {
                 symbolTable[currentToken.value].address = currentAddress;
                 lastLabel = currentToken.value;
                 tokenIndex++;
-                
-                // Check if there's an instruction after the label
+
                 if (tokenIndex < line.size()) {
                     if (line[tokenIndex].type == TokenType::OPCODE || line[tokenIndex].type == TokenType::STANDALONE) {
                         std::vector<Token> instructionTokens;
                         instructionTokens.push_back(line[tokenIndex]);
                         tokenIndex++;
                         
-                        while (tokenIndex < line.size() && 
-                               line[tokenIndex].type != TokenType::DIRECTIVE && 
-                               line[tokenIndex].type != TokenType::OPCODE &&
-                               line[tokenIndex].type != TokenType::STANDALONE) {
+                        while (tokenIndex < line.size() && line[tokenIndex].type != TokenType::DIRECTIVE && line[tokenIndex].type != TokenType::OPCODE && line[tokenIndex].type != TokenType::STANDALONE) {
                             instructionTokens.push_back(line[tokenIndex]);
                             tokenIndex++;
                         }
@@ -361,28 +321,6 @@ bool Parser::processSecondPass() {
                         }
                     }
                 }
-            } else if (currentToken.type == TokenType::OPCODE || currentToken.type == TokenType::STANDALONE) {
-                // Process instruction for second pass
-                std::vector<Token> instructionTokens;
-                instructionTokens.push_back(currentToken);
-                tokenIndex++;
-                
-                while (tokenIndex < line.size() && 
-                       line[tokenIndex].type != TokenType::DIRECTIVE && 
-                       line[tokenIndex].type != TokenType::OPCODE &&
-                       line[tokenIndex].type != TokenType::STANDALONE) {
-                    instructionTokens.push_back(line[tokenIndex]);
-                    tokenIndex++;
-                }
-                
-                if (!handleInstruction(instructionTokens)) {
-                    reportError("Failed to parse instruction '" + currentToken.value + "'", lineNumber);
-                } else {
-                    currentAddress += INSTRUCTION_SIZE;
-                }
-            } else {
-                // Skip unexpected tokens
-                tokenIndex++;
             }
         }
     }
@@ -499,12 +437,6 @@ void Parser::reportError(const std::string& message, int lineNumber) const {
         std::cerr << "Parser Error: " << message << "\n";
     }
     ++errorCount;
-}
-
-void Parser::validateSectionState() const {
-    if (!inTextSection && !inDataSection) {
-        reportError("Operation attempted outside of .text or .data section");
-    }
 }
 
 void Parser::printSymbolTable() const {

@@ -26,8 +26,8 @@ int main() {
     }
 
     std::cout << "\n";
-    parser.printSymbolTable();
-    std::cout << "\n";
-    parser.printParsedInstructions();
+    // parser.printSymbolTable();
+    // std::cout << "\n";
+    // parser.printParsedInstructions();
     return 0;
 }

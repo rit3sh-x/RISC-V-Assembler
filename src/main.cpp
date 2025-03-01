@@ -11,13 +11,13 @@ int main() {
     }
     
     // std::cout << "\nTokenized Output from " << filename << ":\n";
-    // for (const auto& lineTokens : tokens) {
-    //     std::cout << "Line " << lineTokens[0].lineNumber << ": ";
-    //     for (const Token& token : lineTokens) {
-    //         std::cout << "[" << Lexer::getTokenTypeName(token.type) << ", \"" << token.value  << "\"] ";
-    //     }
-    //     std::cout << std::endl;
-    // }
+    for (const auto& lineTokens : tokens) {
+        std::cout << "Line " << lineTokens[0].lineNumber << ": ";
+        for (const Token& token : lineTokens) {
+            std::cout << "[" << Lexer::getTokenTypeName(token.type) << ", \"" << token.value  << "\"] ";
+        }
+        std::cout << std::endl;
+    }
 
     Parser parser(tokens);
     if (!parser.parse()) {
@@ -26,8 +26,8 @@ int main() {
     }
 
     std::cout << "\n";
-    // parser.printSymbolTable();
-    // std::cout << "\n";
-    // parser.printParsedInstructions();
+    parser.printSymbolTable();
+    std::cout << "\n";
+    parser.printParsedInstructions();
     return 0;
 }

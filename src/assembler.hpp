@@ -3,281 +3,451 @@
 
 #include <iostream>
 #include <vector>
-#include <unordered_map>
-#include <stdexcept>
-#include <sstream>
+#include <cstdint>
+#include <fstream>
 #include <iomanip>
 #include <bitset>
 #include "parser.hpp"
+#include "types.hpp"
+
+// Instruction encoding structures
+struct OpcodeInfo {
+    uint32_t opcode;
+    uint32_t funct3;
+    uint32_t funct7;
+};
 
 class Assembler {
 public:
-    struct MachineCode {
-        uint32_t binary;         // 32-bit machine code
-        std::string assembly;    // Original assembly string
-        int address;             // Memory address
-        int lineNumber;          // Source line number
-    };
-
-    static std::vector<MachineCode> assemble(const std::vector<Parser::Instruction>& instructions);
-    static std::string binaryBreakdown(uint32_t binary, const std::string& format);
-    static const std::unordered_map<std::string, std::string> instructionFormats;
+    explicit Assembler(const Parser& parser);
+    bool assemble();
+    bool writeToFile(const std::string& filename);
+    const std::vector<std::pair<uint32_t, uint32_t>>& getMachineCode() const { return machineCode; }
+    bool hasErrors() const { return errorCount > 0; }
+    size_t getErrorCount() const { return errorCount; }
 
 private:
-    static uint32_t encodeInstruction(const Parser::Instruction& inst, int instructionCount);
-    static uint32_t encodeRType(const Parser::Instruction& inst);
-    static uint32_t encodeIType(const Parser::Instruction& inst);
-    static uint32_t encodeSType(const Parser::Instruction& inst);
-    static uint32_t encodeBType(const Parser::Instruction& inst, int instructionCount);
-    static uint32_t encodeUType(const Parser::Instruction& inst);
-    static uint32_t encodeJType(const Parser::Instruction& inst, int instructionCount);
-    static uint32_t encodeStandalone(const Parser::Instruction& inst);
+    const Parser& parser;
+    std::vector<std::pair<uint32_t, uint32_t>> machineCode;  // <address, instruction/data>
+    mutable size_t errorCount = 0;
+
+    // Memory segment base addresses
+    static const uint32_t TEXT_SEGMENT_START = 0x00000000;   // Code segment
+    static const uint32_t DATA_SEGMENT_START = 0x10000000;   // Data segment
+    static const uint32_t HEAP_SEGMENT_START = 0x10008000;   // Heap segment
+    static const uint32_t STACK_SEGMENT_START = 0x7FFFFDC;   // Stack segment
+
+    uint32_t generateRType(const std::string& opcode, const std::vector<std::string>& operands);
+    uint32_t generateIType(const std::string& opcode, const std::vector<std::string>& operands);
+    uint32_t generateSType(const std::string& opcode, const std::vector<std::string>& operands);
+    uint32_t generateSBType(const std::string& opcode, const std::vector<std::string>& operands);
+    uint32_t generateUType(const std::string& opcode, const std::vector<std::string>& operands);
+    uint32_t generateUJType(const std::string& opcode, const std::vector<std::string>& operands);
+    uint32_t generateStandalone(const std::string& opcode);
     
-    static int getRegisterNumber(const std::string& reg);
-    static int getImmediate(const std::string& imm);
-    static std::string instructionToString(const Parser::Instruction& inst);
-    // static std::string binaryBreakdown(uint32_t binary, const std::string& format);
+    int32_t getRegisterNumber(const std::string& reg) const;
+    void reportError(const std::string& message) const;
+    uint32_t calculateRelativeOffset(uint32_t currentAddress, uint32_t targetAddress) const;
 
+    // Helper function to get opcode info
+    OpcodeInfo getOpcodeInfo(const std::string& opcode) const;
+
+    void processTextSegment(const std::vector<ParsedInstruction>& instructions);
+    void processDataSegment(const std::unordered_map<std::string, SymbolEntry>& symbolTable);
+};
+
+Assembler::Assembler(const Parser& p) : parser(p), errorCount(0) {}
+
+OpcodeInfo Assembler::getOpcodeInfo(const std::string& opcode) const {
+    OpcodeInfo info = {0, 0, 0};
     
-    static const std::unordered_map<std::string, uint32_t> opcodeMap;
-    static const std::unordered_map<std::string, uint32_t> funct3Map;
-    static const std::unordered_map<std::string, uint32_t> funct7Map;
-    static std::unordered_map<std::string, int> labelPositions;
-};
+    // R-type instructions
+    if (opcode == "add")  { info = {0b0110011, 0b000, 0b0000000}; }
+    else if (opcode == "sub")  { info = {0b0110011, 0b000, 0b0100000}; }
+    else if (opcode == "sll")  { info = {0b0110011, 0b001, 0b0000000}; }
+    else if (opcode == "slt")  { info = {0b0110011, 0b010, 0b0000000}; }
+    else if (opcode == "sltu") { info = {0b0110011, 0b011, 0b0000000}; }
+    else if (opcode == "xor")  { info = {0b0110011, 0b100, 0b0000000}; }
+    else if (opcode == "srl")  { info = {0b0110011, 0b101, 0b0000000}; }
+    else if (opcode == "sra")  { info = {0b0110011, 0b101, 0b0100000}; }
+    else if (opcode == "or")   { info = {0b0110011, 0b110, 0b0000000}; }
+    else if (opcode == "and")  { info = {0b0110011, 0b111, 0b0000000}; }
+    
+    // I-type instructions
+    else if (opcode == "addi")  { info = {0b0010011, 0b000, 0}; }
+    else if (opcode == "slti")  { info = {0b0010011, 0b010, 0}; }
+    else if (opcode == "sltiu") { info = {0b0010011, 0b011, 0}; }
+    else if (opcode == "xori")  { info = {0b0010011, 0b100, 0}; }
+    else if (opcode == "ori")   { info = {0b0010011, 0b110, 0}; }
+    else if (opcode == "andi")  { info = {0b0010011, 0b111, 0}; }
+    else if (opcode == "lb")    { info = {0b0000011, 0b000, 0}; }
+    else if (opcode == "lh")    { info = {0b0000011, 0b001, 0}; }
+    else if (opcode == "lw")    { info = {0b0000011, 0b010, 0}; }
+    else if (opcode == "lbu")   { info = {0b0000011, 0b100, 0}; }
+    else if (opcode == "lhu")   { info = {0b0000011, 0b101, 0}; }
+    
+    // S-type instructions
+    else if (opcode == "sb") { info = {0b0100011, 0b000, 0}; }
+    else if (opcode == "sh") { info = {0b0100011, 0b001, 0}; }
+    else if (opcode == "sw") { info = {0b0100011, 0b010, 0}; }
+    
+    // SB-type instructions
+    else if (opcode == "beq")  { info = {0b1100011, 0b000, 0}; }
+    else if (opcode == "bne")  { info = {0b1100011, 0b001, 0}; }
+    else if (opcode == "blt")  { info = {0b1100011, 0b100, 0}; }
+    else if (opcode == "bge")  { info = {0b1100011, 0b101, 0}; }
+    else if (opcode == "bltu") { info = {0b1100011, 0b110, 0}; }
+    else if (opcode == "bgeu") { info = {0b1100011, 0b111, 0}; }
+    
+    // U-type instructions
+    else if (opcode == "lui")   { info = {0b0110111, 0, 0}; }
+    else if (opcode == "auipc") { info = {0b0010111, 0, 0}; }
+    
+    // UJ-type instructions
+    else if (opcode == "jal") { info = {0b1101111, 0, 0}; }
+    
+    return info;
+}
 
-const std::unordered_map<std::string, std::string> Assembler::instructionFormats = {
-    {"add", "R"}, {"sub", "R"}, {"and", "R"}, {"or", "R"}, {"xor", "R"},
-    {"addi", "I"}, {"andi", "I"}, {"ori", "I"}, {"lb", "I"}, {"lh", "I"}, 
-    {"lw", "I"}, {"jalr", "I"},
-    {"sb", "S"}, {"sh", "S"}, {"sw", "S"},
-    {"beq", "B"}, {"bne", "B"}, {"blt", "B"}, {"bge", "B"},
-    {"lui", "U"}, {"auipc", "U"},
-    {"jal", "J"},
-    {"ecall", "Standalone"}
-};
+bool Assembler::assemble() {
+    if (parser.hasErrors()) {
+        reportError("Cannot assemble due to parser errors");
+        return false;
+    }
 
-const std::unordered_map<std::string, uint32_t> Assembler::opcodeMap = {
-    {"add", 0x33}, {"sub", 0x33}, {"and", 0x33}, {"or", 0x33}, {"xor", 0x33},
-    {"addi", 0x13}, {"andi", 0x13}, {"ori", 0x13}, {"lb", 0x03}, {"lh", 0x03}, 
-    {"lw", 0x03}, {"jalr", 0x67},
-    {"sb", 0x23}, {"sh", 0x23}, {"sw", 0x23},
-    {"beq", 0x63}, {"bne", 0x63}, {"blt", 0x63}, {"bge", 0x63},
-    {"lui", 0x37}, {"auipc", 0x17},
-    {"jal", 0x6F},
-    {"ecall", 0x73}
-};
+    machineCode.clear();
+    const auto& instructions = parser.getParsedInstructions();
+    const auto& symbolTable = parser.getSymbolTable();
 
-const std::unordered_map<std::string, uint32_t> Assembler::funct3Map = {
-    {"add", 0x0}, {"sub", 0x0}, {"and", 0x7}, {"or", 0x6}, {"xor", 0x4},
-    {"addi", 0x0}, {"andi", 0x7}, {"ori", 0x6}, {"lb", 0x0}, {"lh", 0x1}, 
-    {"lw", 0x2}, {"jalr", 0x0},
-    {"sb", 0x0}, {"sh", 0x1}, {"sw", 0x2},
-    {"beq", 0x0}, {"bne", 0x1}, {"blt", 0x4}, {"bge", 0x5}
-};
+    try {
+        // Process text segment
+        processTextSegment(instructions);
+        
+        // Add text segment termination with 0xDEADBEEF
+        machineCode.push_back({TEXT_SEGMENT_START + instructions.size() * 4, 0xDEADBEEF});
 
-const std::unordered_map<std::string, uint32_t> Assembler::funct7Map = {
-    {"add", 0x00}, {"sub", 0x20}, {"and", 0x00}, {"or", 0x00}, {"xor", 0x00}
-};
+        // Process data segment
+        processDataSegment(symbolTable);
+    }
+    catch (const std::exception& e) {
+        reportError(std::string("Assembly failed: ") + e.what());
+        return false;
+    }
 
-std::unordered_map<std::string, int> Assembler::labelPositions;
+    return !hasErrors();
+}
 
-std::vector<Assembler::MachineCode> Assembler::assemble(const std::vector<Parser::Instruction>& instructions) {
-    std::vector<MachineCode> machineCodes;
-    labelPositions = Parser::labelPositions; // Accessible via friend declaration in Parser
+void Assembler::processTextSegment(const std::vector<ParsedInstruction>& instructions) {
+    uint32_t currentAddress = TEXT_SEGMENT_START;
 
-    int instructionCount = 0;
     for (const auto& inst : instructions) {
-        if (inst.isDirective) continue;
+        uint32_t machineInstruction = 0;
 
-        MachineCode mc;
-        mc.binary = encodeInstruction(inst, instructionCount);
-        mc.assembly = instructionToString(inst);
-        mc.address = instructionCount * 4;
-        mc.lineNumber = inst.lineNumber;
-        machineCodes.push_back(mc);
-        instructionCount++;
+        try {
+            if (riscv::standaloneOpcodes.count(inst.opcode)) {
+                machineInstruction = generateStandalone(inst.opcode);
+            }
+            else if (riscv::RTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
+                machineInstruction = generateRType(inst.opcode, inst.operands);
+            }
+            else if (riscv::ITypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
+                machineInstruction = generateIType(inst.opcode, inst.operands);
+            }
+            else if (riscv::STypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
+                machineInstruction = generateSType(inst.opcode, inst.operands);
+            }
+            else if (riscv::SBTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
+                machineInstruction = generateSBType(inst.opcode, inst.operands);
+            }
+            else if (riscv::UTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
+                machineInstruction = generateUType(inst.opcode, inst.operands);
+            }
+            else if (riscv::UJTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
+                machineInstruction = generateUJType(inst.opcode, inst.operands);
+            }
+            else {
+                reportError("Unknown instruction type for opcode: " + inst.opcode);
+                continue;
+            }
+
+            machineCode.push_back({currentAddress, machineInstruction});
+            currentAddress += 4;
+        }
+        catch (const std::exception& e) {
+            reportError("Error assembling instruction: " + inst.opcode + " - " + e.what());
+        }
+    }
+}
+
+void Assembler::processDataSegment(const std::unordered_map<std::string, SymbolEntry>& symbolTable) {
+    for (const auto& pair : symbolTable) {
+        const std::string& label = pair.first;
+        const SymbolEntry& entry = pair.second;
+        
+        if (entry.address >= DATA_SEGMENT_START) {  // Only process data segment entries
+            if (entry.isString) {
+                // Handle string data
+                uint32_t addr = entry.address;
+                for (char c : entry.stringValue) {
+                    machineCode.push_back(std::make_pair(addr, static_cast<uint32_t>(c)));
+                    addr++;
+                }
+                // Add null terminator if needed (for .asciz or .asciiz)
+                if (entry.stringValue.length() % 4 != 0) {
+                    machineCode.push_back(std::make_pair(addr, 0));
+                }
+            } else {
+                // Handle numeric data
+                uint32_t addr = entry.address;
+                for (uint64_t value : entry.numericValues) {
+                    machineCode.push_back(std::make_pair(addr, static_cast<uint32_t>(value)));
+                    addr += 4;
+                }
+            }
+        }
+    }
+}
+
+uint32_t Assembler::generateRType(const std::string& opcode, const std::vector<std::string>& operands) {
+    auto opcodeInfo = getOpcodeInfo(opcode);
+    
+    int32_t rd = getRegisterNumber(operands[0]);
+    int32_t rs1 = getRegisterNumber(operands[1]);
+    int32_t rs2 = getRegisterNumber(operands[2]);
+
+    if (rd < 0 || rs1 < 0 || rs2 < 0) {
+        throw std::runtime_error("Invalid register in R-type instruction");
     }
 
-    return machineCodes;
+    return (opcodeInfo.funct7 << 25) | 
+           (rs2 << 20) | 
+           (rs1 << 15) | 
+           (opcodeInfo.funct3 << 12) | 
+           (rd << 7) | 
+           opcodeInfo.opcode;
 }
 
-uint32_t Assembler::encodeInstruction(const Parser::Instruction& inst, int instructionCount) {
-    auto formatIt = instructionFormats.find(inst.opcode);
-    if (formatIt == instructionFormats.end()) {
-        throw std::runtime_error("Line " + std::to_string(inst.lineNumber) + ": Unknown instruction '" + inst.opcode + "'");
+uint32_t Assembler::generateIType(const std::string& opcode, const std::vector<std::string>& operands) {
+    auto opcodeInfo = getOpcodeInfo(opcode);
+    
+    int32_t rd = getRegisterNumber(operands[0]);
+    int32_t rs1 = getRegisterNumber(operands[1]);
+    int32_t imm = std::stoi(operands[2]);
+
+    if (rd < 0 || rs1 < 0) {
+        throw std::runtime_error("Invalid register in I-type instruction");
     }
 
-    std::string format = formatIt->second;
-    if (format == "R") return encodeRType(inst);
-    if (format == "I") return encodeIType(inst);
-    if (format == "S") return encodeSType(inst);
-    if (format == "B") return encodeBType(inst, instructionCount);
-    if (format == "U") return encodeUType(inst);
-    if (format == "J") return encodeJType(inst, instructionCount);
-    if (format == "Standalone") return encodeStandalone(inst);
-    
-    throw std::runtime_error("Line " + std::to_string(inst.lineNumber) + ": Unsupported format for '" + inst.opcode + "'");
-}
-
-int Assembler::getRegisterNumber(const std::string& reg) {
-    if (reg[0] == 'x') return std::stoi(reg.substr(1));
-    static const std::unordered_map<std::string, int> aliases = {
-        {"zero", 0}, {"ra", 1}, {"sp", 2}, {"gp", 3}, {"tp", 4},
-        {"t0", 5}, {"t1", 6}, {"t2", 7}, {"s0", 8}, {"s1", 9},
-        {"a0", 10}, {"a1", 11}, {"a2", 12}, {"a3", 13}, {"a4", 14},
-        {"a5", 15}, {"a6", 16}, {"a7", 17}, {"s2", 18}, {"s3", 19},
-        {"s4", 20}, {"s5", 21}, {"s6", 22}, {"s7", 23}, {"s8", 24},
-        {"s9", 25}, {"s10", 26}, {"s11", 27}, {"t3", 28}, {"t4", 29},
-        {"t5", 30}, {"t6", 31}
-    };
-    auto it = aliases.find(reg);
-    if (it == aliases.end()) throw std::runtime_error("Invalid register: " + reg);
-    return it->second;
-}
-
-int Assembler::getImmediate(const std::string& imm) {
-    if (imm.substr(0, 2) == "0x") return std::stoi(imm, nullptr, 16);
-    return std::stoi(imm);
-}
-
-uint32_t Assembler::encodeRType(const Parser::Instruction& inst) {
-    int rd = getRegisterNumber(inst.operands[0]);
-    int rs1 = getRegisterNumber(inst.operands[1]);
-    int rs2 = getRegisterNumber(inst.operands[2]);
-    
-    uint32_t instBinary = 0;
-    instBinary |= opcodeMap.at(inst.opcode);
-    instBinary |= (rd & 0x1F) << 7;
-    instBinary |= (funct3Map.at(inst.opcode) & 0x7) << 12;
-    instBinary |= (rs1 & 0x1F) << 15;
-    instBinary |= (rs2 & 0x1F) << 20;
-    instBinary |= (funct7Map.at(inst.opcode) & 0x7F) << 25;
-    return instBinary;
-}
-
-uint32_t Assembler::encodeIType(const Parser::Instruction& inst) {
-    int rd = getRegisterNumber(inst.operands[0]);
-    int rs1 = getRegisterNumber(inst.operands[1]);
-    int imm = getImmediate(inst.operands[2]);
-    
-    uint32_t instBinary = 0;
-    instBinary |= opcodeMap.at(inst.opcode);
-    instBinary |= (rd & 0x1F) << 7;
-    instBinary |= (funct3Map.at(inst.opcode) & 0x7) << 12;
-    instBinary |= (rs1 & 0x1F) << 15;
-    instBinary |= (imm & 0xFFF) << 20;
-    return instBinary;
-}
-
-uint32_t Assembler::encodeSType(const Parser::Instruction& inst) {
-    int rs2 = getRegisterNumber(inst.operands[0]);
-    int rs1 = getRegisterNumber(inst.operands[1]);
-    int imm = getImmediate(inst.operands[2]);
-    
-    uint32_t instBinary = 0;
-    instBinary |= opcodeMap.at(inst.opcode);
-    instBinary |= (imm & 0x1F) << 7;
-    instBinary |= (funct3Map.at(inst.opcode) & 0x7) << 12;
-    instBinary |= (rs1 & 0x1F) << 15;
-    instBinary |= (rs2 & 0x1F) << 20;
-    instBinary |= ((imm >> 5) & 0x7F) << 25;
-    return instBinary;
-}
-
-uint32_t Assembler::encodeBType(const Parser::Instruction& inst, int instructionCount) {
-    int rs1 = getRegisterNumber(inst.operands[0]);
-    int rs2 = getRegisterNumber(inst.operands[1]);
-    int target = labelPositions.at(inst.operands[2]);
-    int imm = (target - instructionCount) * 4;
-    
-    uint32_t instBinary = 0;
-    instBinary |= opcodeMap.at(inst.opcode);
-    instBinary |= ((imm >> 11) & 0x1) << 7;
-    instBinary |= ((imm >> 1) & 0xF) << 8;
-    instBinary |= (funct3Map.at(inst.opcode) & 0x7) << 12;
-    instBinary |= (rs1 & 0x1F) << 15;
-    instBinary |= (rs2 & 0x1F) << 20;
-    instBinary |= ((imm >> 5) & 0x3F) << 25;
-    instBinary |= ((imm >> 12) & 0x1) << 31;
-    return instBinary;
-}
-
-uint32_t Assembler::encodeUType(const Parser::Instruction& inst) {
-    int rd = getRegisterNumber(inst.operands[0]);
-    int imm = getImmediate(inst.operands[1]);
-    
-    uint32_t instBinary = 0;
-    instBinary |= opcodeMap.at(inst.opcode);
-    instBinary |= (rd & 0x1F) << 7;
-    instBinary |= (imm & 0xFFFFF) << 12;
-    return instBinary;
-}
-
-uint32_t Assembler::encodeJType(const Parser::Instruction& inst, int instructionCount) {
-    int rd = getRegisterNumber(inst.operands[0]);
-    int target = labelPositions.at(inst.operands[1]);
-    int imm = (target - instructionCount) * 4;
-    
-    uint32_t instBinary = 0;
-    instBinary |= opcodeMap.at(inst.opcode);
-    instBinary |= (rd & 0x1F) << 7;
-    instBinary |= ((imm >> 12) & 0xFF) << 12;
-    instBinary |= ((imm >> 11) & 0x1) << 20;
-    instBinary |= ((imm >> 1) & 0x3FF) << 21;
-    instBinary |= ((imm >> 20) & 0x1) << 31;
-    return instBinary;
-}
-
-uint32_t Assembler::encodeStandalone(const Parser::Instruction& inst) {
-    if (inst.opcode == "ecall") return 0x00000073;
-    throw std::runtime_error("Line " + std::to_string(inst.lineNumber) + ": Unknown standalone instruction '" + inst.opcode + "'");
-}
-
-std::string Assembler::instructionToString(const Parser::Instruction& inst) {
-    std::stringstream ss;
-    ss << inst.opcode;
-    for (const auto& op : inst.operands) {
-        ss << "," << op; // Match your requested output format with commas
+    if (imm < -2048 || imm > 2047) {
+        throw std::runtime_error("Immediate value out of range for I-type instruction");
     }
-    return ss.str();
+
+    return ((imm & 0xFFF) << 20) |
+           (rs1 << 15) |
+           (opcodeInfo.funct3 << 12) |
+           (rd << 7) |
+           opcodeInfo.opcode;
 }
 
-std::string Assembler::binaryBreakdown(uint32_t binary, const std::string& format) {
-    std::stringstream ss;
-    ss << std::bitset<7>(binary & 0x7F) << "-"           // opcode
-       << std::bitset<3>((binary >> 12) & 0x7) << "-";    // funct3
+uint32_t Assembler::generateSType(const std::string& opcode, const std::vector<std::string>& operands) {
+    auto opcodeInfo = getOpcodeInfo(opcode);
     
-    if (format == "R") {
-        ss << std::bitset<7>((binary >> 25) & 0x7F) << "-" // funct7
-           << std::bitset<5>((binary >> 7) & 0x1F) << "-"  // rd
-           << std::bitset<5>((binary >> 15) & 0x1F) << "-" // rs1
-           << std::bitset<5>((binary >> 20) & 0x1F) << "-NULL"; // rs2
-    } else if (format == "I") {
-        ss << "NULL-" << std::bitset<5>((binary >> 7) & 0x1F) << "-" // rd
-           << std::bitset<5>((binary >> 15) & 0x1F) << "-"           // rs1
-           << std::bitset<12>((binary >> 20) & 0xFFF);               // imm
-    } else if (format == "S") {
-        ss << std::bitset<7>((binary >> 25) & 0x7F) << "-" // imm[11:5]
-           << std::bitset<5>((binary >> 7) & 0x1F) << "-"  // imm[4:0]
-           << std::bitset<5>((binary >> 15) & 0x1F) << "-" // rs1
-           << std::bitset<5>((binary >> 20) & 0x1F);       // rs2
-    } else if (format == "B") {
-        ss << std::bitset<7>((binary >> 25) & 0x7F) << "-" // imm[12|10:5]
-           << std::bitset<5>((binary >> 7) & 0x1F) << "-"  // imm[4:1|11]
-           << std::bitset<5>((binary >> 15) & 0x1F) << "-" // rs1
-           << std::bitset<5>((binary >> 20) & 0x1F);       // rs2
-    } else if (format == "U") {
-        ss << std::bitset<20>((binary >> 12) & 0xFFFFF) << "-" // imm
-           << std::bitset<5>((binary >> 7) & 0x1F) << "-NULL-NULL"; // rd
-    } else if (format == "J") {
-        ss << std::bitset<20>((binary >> 12) & 0xFFFFF) << "-" // imm
-           << std::bitset<5>((binary >> 7) & 0x1F) << "-NULL-NULL"; // rd
-    } else if (format == "Standalone") {
-        ss << "NULL-NULL-NULL-NULL-NULL-NULL";
-    } else {
-        ss << "INVALID";
+    int32_t rs2 = getRegisterNumber(operands[0]);
+    int32_t rs1 = getRegisterNumber(operands[2]);  // Base register
+    int32_t imm = std::stoi(operands[1]);          // Offset
+
+    if (rs1 < 0 || rs2 < 0) {
+        throw std::runtime_error("Invalid register in S-type instruction");
     }
-    return ss.str();
+
+    if (imm < -2048 || imm > 2047) {
+        throw std::runtime_error("Immediate value out of range for S-type instruction");
+    }
+
+    uint32_t imm11_5 = (imm >> 5) & 0x7F;
+    uint32_t imm4_0 = imm & 0x1F;
+
+    return (imm11_5 << 25) |
+           (rs2 << 20) |
+           (rs1 << 15) |
+           (opcodeInfo.funct3 << 12) |
+           (imm4_0 << 7) |
+           opcodeInfo.opcode;
+}
+
+uint32_t Assembler::generateSBType(const std::string& opcode, const std::vector<std::string>& operands) {
+    auto opcodeInfo = getOpcodeInfo(opcode);
+    
+    int32_t rs1 = getRegisterNumber(operands[0]);
+    int32_t rs2 = getRegisterNumber(operands[1]);
+    int32_t offset = std::stoi(operands[2]);
+
+    if (rs1 < 0 || rs2 < 0) {
+        throw std::runtime_error("Invalid register in SB-type instruction");
+    }
+
+    if (offset < -4096 || offset > 4095 || (offset & 1)) {
+        throw std::runtime_error("Invalid branch offset");
+    }
+
+    uint32_t imm12 = (offset >> 12) & 0x1;
+    uint32_t imm11 = (offset >> 11) & 0x1;
+    uint32_t imm10_5 = (offset >> 5) & 0x3F;
+    uint32_t imm4_1 = (offset >> 1) & 0xF;
+
+    return (imm12 << 31) |
+           (imm11 << 7) |
+           (imm10_5 << 25) |
+           (rs2 << 20) |
+           (rs1 << 15) |
+           (opcodeInfo.funct3 << 12) |
+           (imm4_1 << 8) |
+           opcodeInfo.opcode;
+}
+
+uint32_t Assembler::generateUType(const std::string& opcode, const std::vector<std::string>& operands) {
+    auto opcodeInfo = getOpcodeInfo(opcode);
+    
+    int32_t rd = getRegisterNumber(operands[0]);
+    int32_t imm = std::stoi(operands[1]);
+
+    if (rd < 0) {
+        throw std::runtime_error("Invalid register in U-type instruction");
+    }
+
+    return (imm & 0xFFFFF000) |
+           (rd << 7) |
+           opcodeInfo.opcode;
+}
+
+uint32_t Assembler::generateUJType(const std::string& opcode, const std::vector<std::string>& operands) {
+    auto opcodeInfo = getOpcodeInfo(opcode);
+    
+    int32_t rd = getRegisterNumber(operands[0]);
+    int32_t offset = std::stoi(operands[1]);
+
+    if (rd < 0) {
+        throw std::runtime_error("Invalid register in UJ-type instruction");
+    }
+
+    if (offset < -1048576 || offset > 1048575 || (offset & 1)) {
+        throw std::runtime_error("Invalid jump offset");
+    }
+
+    uint32_t imm20 = (offset >> 20) & 0x1;
+    uint32_t imm19_12 = (offset >> 12) & 0xFF;
+    uint32_t imm11 = (offset >> 11) & 0x1;
+    uint32_t imm10_1 = (offset >> 1) & 0x3FF;
+
+    return (imm20 << 31) |
+           (imm10_1 << 21) |
+           (imm11 << 20) |
+           (imm19_12 << 12) |
+           (rd << 7) |
+           opcodeInfo.opcode;
+}
+
+uint32_t Assembler::generateStandalone(const std::string& opcode) {
+    if (opcode == "ecall") {
+        return 0x00000073;  // ECALL encoding
+    }
+    else if (opcode == "ebreak") {
+        return 0x00100073;  // EBREAK encoding
+    }
+    throw std::runtime_error("Unknown standalone instruction: " + opcode);
+}
+
+int32_t Assembler::getRegisterNumber(const std::string& reg) const {
+    // First try to parse as x0-x31
+    if (reg[0] == 'x') {
+        try {
+            int num = std::stoi(reg.substr(1));
+            if (num >= 0 && num <= 31) {
+                return num;
+            }
+        } catch (...) {}
+    }
+    
+    // Then try to find in ABI names
+    for (int i = 0; i <= 31; i++) {
+        if (riscv::validRegisters.find(reg) != riscv::validRegisters.end()) {
+            return i;
+        }
+    }
+    
+    return -1;
+}
+
+bool Assembler::writeToFile(const std::string& filename) {
+    std::ofstream outFile(filename);
+    if (!outFile) {
+        reportError("Could not open output file: " + filename);
+        return false;
+    }
+
+    // Sort by address before writing
+    std::vector<std::pair<uint32_t, uint32_t>> sortedCode = machineCode;
+    std::sort(sortedCode.begin(), sortedCode.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    // Set up formatting
+    outFile << std::hex << std::uppercase;  // Use hexadecimal format
+    outFile.fill('0');  // Fill with zeros for consistent width
+
+    // First write data segment
+    outFile << "-------------DATA------------\n";
+    bool hasDataSegment = false;
+    for (const auto& pair : sortedCode) {
+        if (pair.first >= DATA_SEGMENT_START) {
+            hasDataSegment = true;
+            outFile << "0x" << std::setw(8) << pair.first << " 0x" << std::setw(8) << pair.second << "\n";
+        }
+    }
+    if (hasDataSegment) outFile << "\n";
+
+    // Then write text segment
+    outFile << "-------------TEXT------------\n";
+    for (const auto& pair : sortedCode) {
+        if (pair.first < DATA_SEGMENT_START) {
+            uint32_t addr = pair.first;
+            uint32_t instruction = pair.second;
+
+            // Write address and instruction
+            outFile << "0x" << std::setw(8) << addr << " 0x" << std::setw(8) << instruction;
+
+            // Add instruction decoding comment
+            uint32_t opcode = instruction & 0x7F;
+            uint32_t rd = (instruction >> 7) & 0x1F;
+            uint32_t funct3 = (instruction >> 12) & 0x7;
+            uint32_t rs1 = (instruction >> 15) & 0x1F;
+            uint32_t rs2 = (instruction >> 20) & 0x1F;
+            uint32_t funct7 = (instruction >> 25) & 0x7F;
+            
+            outFile << " # " << std::bitset<7>(opcode) << "-"
+                   << std::bitset<3>(funct3) << "-"
+                   << std::bitset<7>(funct7) << "-"
+                   << std::bitset<5>(rd) << "-"
+                   << std::bitset<5>(rs1) << "-"
+                   << std::bitset<5>(rs2);
+            
+            if (instruction == 0xDEADBEEF) {
+                outFile << " [TEXT_SEGMENT_END]";
+            }
+            outFile << "\n";
+        }
+    }
+    outFile << "\n";
+
+    return true;
+}
+
+void Assembler::reportError(const std::string& message) const {
+    std::cerr << "Assembler Error: " << message << "\n";
+    ++errorCount;
+}
+
+uint32_t Assembler::calculateRelativeOffset(uint32_t currentAddress, uint32_t targetAddress) const {
+    return targetAddress - currentAddress;
 }
 
 #endif

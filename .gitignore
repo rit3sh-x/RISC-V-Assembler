@@ -3,3 +3,4 @@ input.asm
 /*.exe
 /.vscode/
 /src/temp
+output.mc

@@ -51,8 +51,11 @@ private:
     mutable size_t errorCount = 0;
     std::string lastLabel;
 
-    static const uint32_t TEXT_BASE_ADDRESS = 0x00000000;
-    static const uint32_t DATA_BASE_ADDRESS = 0x10000000;
+    // Memory segment base addresses
+    static const uint32_t TEXT_BASE_ADDRESS = 0x00000000;  // Code segment
+    static const uint32_t DATA_BASE_ADDRESS = 0x10000000;  // Data segment
+    static const uint32_t HEAP_BASE_ADDRESS = 0x10008000;  // Heap segment
+    static const uint32_t STACK_BASE_ADDRESS = 0x7FFFFDC;  // Stack segment
     static const uint32_t INSTRUCTION_SIZE = 4;
 
     bool processFirstPass();

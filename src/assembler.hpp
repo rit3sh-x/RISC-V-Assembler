@@ -10,7 +10,8 @@
 #include "parser.hpp"
 #include "types.hpp"
 
-// Instruction encoding structures
+using namespace riscv;
+
 struct OpcodeInfo {
     uint32_t opcode;
     uint32_t funct3;
@@ -28,14 +29,8 @@ public:
 
 private:
     const Parser& parser;
-    std::vector<std::pair<uint32_t, uint32_t>> machineCode;  // <address, instruction/data>
+    std::vector<std::pair<uint32_t, uint32_t>> machineCode;
     mutable size_t errorCount = 0;
-
-    // Memory segment base addresses
-    static const uint32_t TEXT_SEGMENT_START = 0x00000000;   // Code segment
-    static const uint32_t DATA_SEGMENT_START = 0x10000000;   // Data segment
-    static const uint32_t HEAP_SEGMENT_START = 0x10008000;   // Heap segment
-    static const uint32_t STACK_SEGMENT_START = 0x7FFFFDC;   // Stack segment
 
     uint32_t generateRType(const std::string& opcode, const std::vector<std::string>& operands);
     uint32_t generateIType(const std::string& opcode, const std::vector<std::string>& operands);
@@ -49,7 +44,6 @@ private:
     void reportError(const std::string& message) const;
     uint32_t calculateRelativeOffset(uint32_t currentAddress, uint32_t targetAddress) const;
 
-    // Helper function to get opcode info
     OpcodeInfo getOpcodeInfo(const std::string& opcode) const;
 
     void processTextSegment(const std::vector<ParsedInstruction>& instructions);
@@ -60,8 +54,7 @@ Assembler::Assembler(const Parser& p) : parser(p), errorCount(0) {}
 
 OpcodeInfo Assembler::getOpcodeInfo(const std::string& opcode) const {
     OpcodeInfo info = {0, 0, 0};
-    
-    // R-type instructions
+
     if (opcode == "add")  { info = {0b0110011, 0b000, 0b0000000}; }
     else if (opcode == "sub")  { info = {0b0110011, 0b000, 0b0100000}; }
     else if (opcode == "sll")  { info = {0b0110011, 0b001, 0b0000000}; }
@@ -72,8 +65,7 @@ OpcodeInfo Assembler::getOpcodeInfo(const std::string& opcode) const {
     else if (opcode == "sra")  { info = {0b0110011, 0b101, 0b0100000}; }
     else if (opcode == "or")   { info = {0b0110011, 0b110, 0b0000000}; }
     else if (opcode == "and")  { info = {0b0110011, 0b111, 0b0000000}; }
-    
-    // I-type instructions
+
     else if (opcode == "addi")  { info = {0b0010011, 0b000, 0}; }
     else if (opcode == "slti")  { info = {0b0010011, 0b010, 0}; }
     else if (opcode == "sltiu") { info = {0b0010011, 0b011, 0}; }
@@ -85,27 +77,22 @@ OpcodeInfo Assembler::getOpcodeInfo(const std::string& opcode) const {
     else if (opcode == "lw")    { info = {0b0000011, 0b010, 0}; }
     else if (opcode == "lbu")   { info = {0b0000011, 0b100, 0}; }
     else if (opcode == "lhu")   { info = {0b0000011, 0b101, 0}; }
-    
-    // S-type instructions
+
     else if (opcode == "sb") { info = {0b0100011, 0b000, 0}; }
     else if (opcode == "sh") { info = {0b0100011, 0b001, 0}; }
     else if (opcode == "sw") { info = {0b0100011, 0b010, 0}; }
-    
-    // SB-type instructions
+
     else if (opcode == "beq")  { info = {0b1100011, 0b000, 0}; }
     else if (opcode == "bne")  { info = {0b1100011, 0b001, 0}; }
     else if (opcode == "blt")  { info = {0b1100011, 0b100, 0}; }
     else if (opcode == "bge")  { info = {0b1100011, 0b101, 0}; }
     else if (opcode == "bltu") { info = {0b1100011, 0b110, 0}; }
     else if (opcode == "bgeu") { info = {0b1100011, 0b111, 0}; }
-    
-    // U-type instructions
+
     else if (opcode == "lui")   { info = {0b0110111, 0, 0}; }
     else if (opcode == "auipc") { info = {0b0010111, 0, 0}; }
-    
-    // UJ-type instructions
+
     else if (opcode == "jal") { info = {0b1101111, 0, 0}; }
-    
     return info;
 }
 
@@ -120,13 +107,8 @@ bool Assembler::assemble() {
     const auto& symbolTable = parser.getSymbolTable();
 
     try {
-        // Process text segment
         processTextSegment(instructions);
-        
-        // Add text segment termination with 0xDEADBEEF
         machineCode.push_back({TEXT_SEGMENT_START + instructions.size() * 4, 0xDEADBEEF});
-
-        // Process data segment
         processDataSegment(symbolTable);
     }
     catch (const std::exception& e) {
@@ -184,28 +166,33 @@ void Assembler::processDataSegment(const std::unordered_map<std::string, SymbolE
         const std::string& label = pair.first;
         const SymbolEntry& entry = pair.second;
         
-        if (entry.address >= DATA_SEGMENT_START) {  // Only process data segment entries
+        if (entry.address >= DATA_SEGMENT_START) {
+            uint32_t addr = entry.address;
+            
             if (entry.isString) {
-                // Handle string data
-                uint32_t addr = entry.address;
                 for (char c : entry.stringValue) {
                     machineCode.push_back(std::make_pair(addr, static_cast<uint32_t>(c)));
                     addr++;
                 }
-                // Add null terminator if needed (for .asciz or .asciiz)
-                if (entry.stringValue.length() % 4 != 0) {
+                machineCode.push_back(std::make_pair(addr, 0));
+                addr++;
+                while (addr % 4 != 0) {
                     machineCode.push_back(std::make_pair(addr, 0));
+                    addr++;
                 }
             } else {
-                // Handle numeric data
-                uint32_t addr = entry.address;
                 for (uint64_t value : entry.numericValues) {
+                    if (addr % 4 != 0) {
+                        addr = (addr + 3) & ~3;
+                    }
                     machineCode.push_back(std::make_pair(addr, static_cast<uint32_t>(value)));
                     addr += 4;
                 }
             }
         }
     }
+    
+    std::sort(machineCode.begin(), machineCode.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
 }
 
 uint32_t Assembler::generateRType(const std::string& opcode, const std::vector<std::string>& operands) {
@@ -253,8 +240,8 @@ uint32_t Assembler::generateSType(const std::string& opcode, const std::vector<s
     auto opcodeInfo = getOpcodeInfo(opcode);
     
     int32_t rs2 = getRegisterNumber(operands[0]);
-    int32_t rs1 = getRegisterNumber(operands[2]);  // Base register
-    int32_t imm = std::stoi(operands[1]);          // Offset
+    int32_t rs1 = getRegisterNumber(operands[2]);
+    int32_t imm = std::stoi(operands[1]);
 
     if (rs1 < 0 || rs2 < 0) {
         throw std::runtime_error("Invalid register in S-type instruction");
@@ -349,16 +336,15 @@ uint32_t Assembler::generateUJType(const std::string& opcode, const std::vector<
 
 uint32_t Assembler::generateStandalone(const std::string& opcode) {
     if (opcode == "ecall") {
-        return 0x00000073;  // ECALL encoding
+        return 0x00000073;
     }
     else if (opcode == "ebreak") {
-        return 0x00100073;  // EBREAK encoding
+        return 0x00100073;
     }
     throw std::runtime_error("Unknown standalone instruction: " + opcode);
 }
 
 int32_t Assembler::getRegisterNumber(const std::string& reg) const {
-    // First try to parse as x0-x31
     if (reg[0] == 'x') {
         try {
             int num = std::stoi(reg.substr(1));
@@ -368,7 +354,6 @@ int32_t Assembler::getRegisterNumber(const std::string& reg) const {
         } catch (...) {}
     }
     
-    // Then try to find in ABI names
     for (int i = 0; i <= 31; i++) {
         if (riscv::validRegisters.find(reg) != riscv::validRegisters.end()) {
             return i;
@@ -385,54 +370,91 @@ bool Assembler::writeToFile(const std::string& filename) {
         return false;
     }
 
-    // Sort by address before writing
     std::vector<std::pair<uint32_t, uint32_t>> sortedCode = machineCode;
-    std::sort(sortedCode.begin(), sortedCode.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::sort(sortedCode.begin(), sortedCode.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
 
-    // Set up formatting
-    outFile << std::hex << std::uppercase;  // Use hexadecimal format
-    outFile.fill('0');  // Fill with zeros for consistent width
+    outFile << std::hex << std::uppercase;
+    outFile.fill('0');
 
-    // First write data segment
+    const auto& symbolTable = parser.getSymbolTable();
+
     outFile << "-------------DATA------------\n";
     bool hasDataSegment = false;
     for (const auto& pair : sortedCode) {
         if (pair.first >= DATA_SEGMENT_START) {
             hasDataSegment = true;
-            outFile << "0x" << std::setw(8) << pair.first << " 0x" << std::setw(8) << pair.second << "\n";
+            outFile << "0x" << std::setw(8) << pair.first << " 0x" << std::setw(8) << pair.second;
+            
+            bool isStringData = false;
+            for (const auto& symbol : symbolTable) {
+                const auto& entry = symbol.second;
+                if (pair.first >= entry.address && 
+                    pair.first < entry.address + (entry.isString ? entry.stringValue.length() + 1 : entry.numericValues.size() * 4)) {
+                    isStringData = entry.isString;
+                    break;
+                }
+            }
+
+            if (isStringData) {
+                if (pair.second == 0) {
+                    outFile << "    # Null terminator";
+                } else {
+                    outFile << "    # ASCII: '" << static_cast<char>(pair.second) << "'";
+                }
+            } else {
+                outFile << "    # Decimal value: " << std::dec << pair.second << std::hex;
+            }
+            outFile << "\n";
         }
     }
     if (hasDataSegment) outFile << "\n";
 
-    // Then write text segment
     outFile << "-------------TEXT------------\n";
     for (const auto& pair : sortedCode) {
         if (pair.first < DATA_SEGMENT_START) {
             uint32_t addr = pair.first;
             uint32_t instruction = pair.second;
 
-            // Write address and instruction
             outFile << "0x" << std::setw(8) << addr << " 0x" << std::setw(8) << instruction;
 
-            // Add instruction decoding comment
-            uint32_t opcode = instruction & 0x7F;
-            uint32_t rd = (instruction >> 7) & 0x1F;
-            uint32_t funct3 = (instruction >> 12) & 0x7;
-            uint32_t rs1 = (instruction >> 15) & 0x1F;
-            uint32_t rs2 = (instruction >> 20) & 0x1F;
-            uint32_t funct7 = (instruction >> 25) & 0x7F;
-            
-            outFile << " # " << std::bitset<7>(opcode) << "-"
-                   << std::bitset<3>(funct3) << "-"
-                   << std::bitset<7>(funct7) << "-"
-                   << std::bitset<5>(rd) << "-"
-                   << std::bitset<5>(rs1) << "-"
-                   << std::bitset<5>(rs2);
-            
             if (instruction == 0xDEADBEEF) {
-                outFile << " [TEXT_SEGMENT_END]";
+                outFile << "    # [TEXT_SEGMENT_END]   | Binary: ";
+            } else {
+                uint32_t opcode = instruction & 0x7F;
+                uint32_t rd = (instruction >> 7) & 0x1F;
+                uint32_t funct3 = (instruction >> 12) & 0x7;
+                uint32_t rs1 = (instruction >> 15) & 0x1F;
+                uint32_t rs2 = (instruction >> 20) & 0x1F;
+                uint32_t funct7 = (instruction >> 25) & 0x7F;
+
+                std::string instType;
+                if (opcode == 0b0110011) {
+                    instType = "R-type: ";
+                } else if (opcode == 0b0010011 || opcode == 0b0000011) {
+                    instType = "I-type: ";
+                } else if (opcode == 0b0100011) {
+                    instType = "S-type: ";
+                } else if (opcode == 0b1100011) {
+                    instType = "SB-type: ";
+                } else if (opcode == 0b0110111 || opcode == 0b0010111) {
+                    instType = "U-type: ";
+                } else if (opcode == 0b1101111) {
+                    instType = "UJ-type: ";
+                } else if (instruction == 0x00000073) {
+                    instType = "System: ";
+                }
+
+                outFile << "    # " << instType;
             }
+
+            std::bitset<32> bits(instruction);
+            std::string binStr = bits.to_string();
+            outFile << binStr.substr(0, 7) << "-"
+                   << binStr.substr(7, 5) << "-"
+                   << binStr.substr(12, 3) << "-"
+                   << binStr.substr(15, 5) << "-"
+                   << binStr.substr(20, 5) << "-"
+                   << binStr.substr(25, 7);
             outFile << "\n";
         }
     }

@@ -7,6 +7,12 @@
 
 namespace riscv
 {
+    static const uint32_t TEXT_SEGMENT_START = 0x00000000;
+    static const uint32_t DATA_SEGMENT_START = 0x10000000;
+    static const uint32_t HEAP_SEGMENT_START = 0x10008000;
+    static const uint32_t STACK_SEGMENT_START = 0x7FFFFDC;
+    static const uint32_t INSTRUCTION_SIZE = 4;
+
     enum TokenType
     {
         OPCODE,

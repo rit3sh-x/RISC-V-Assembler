@@ -51,13 +51,6 @@ private:
     mutable size_t errorCount = 0;
     std::string lastLabel;
 
-    // Memory segment base addresses
-    static const uint32_t TEXT_BASE_ADDRESS = 0x00000000;  // Code segment
-    static const uint32_t DATA_BASE_ADDRESS = 0x10000000;  // Data segment
-    static const uint32_t HEAP_BASE_ADDRESS = 0x10008000;  // Heap segment
-    static const uint32_t STACK_BASE_ADDRESS = 0x7FFFFDC;  // Stack segment
-    static const uint32_t INSTRUCTION_SIZE = 4;
-
     bool processFirstPass();
     bool processSecondPass();
     void handleDirective(const std::vector<Token> &line);
@@ -96,7 +89,7 @@ std::vector<Token>::const_iterator Parser::findNextDirectiveOrOpcode(const std::
 
 bool Parser::processFirstPass()
 {
-    currentAddress = TEXT_BASE_ADDRESS;
+    currentAddress = TEXT_SEGMENT_START;
     inTextSection = true;
     inDataSection = false;
     lastLabel.clear();
@@ -117,13 +110,13 @@ bool Parser::processFirstPass()
             {
                 inDataSection = true;
                 inTextSection = false;
-                currentAddress = DATA_BASE_ADDRESS;
+                currentAddress = DATA_SEGMENT_START;
             }
             else if (line[0].value == ".text")
             {
                 inTextSection = true;
                 inDataSection = false;
-                currentAddress = TEXT_BASE_ADDRESS;
+                currentAddress = TEXT_SEGMENT_START;
             }
             continue;
         }
@@ -330,7 +323,7 @@ void Parser::addLabel(const std::string &label)
 
 bool Parser::processSecondPass()
 {
-    currentAddress = TEXT_BASE_ADDRESS;
+    currentAddress = TEXT_SEGMENT_START;
     inTextSection = true;
     inDataSection = false;
     parsedInstructions.clear();
@@ -351,13 +344,13 @@ bool Parser::processSecondPass()
             {
                 inDataSection = true;
                 inTextSection = false;
-                currentAddress = DATA_BASE_ADDRESS;
+                currentAddress = DATA_SEGMENT_START;
             }
             else if (line[0].value == ".text")
             {
                 inTextSection = true;
                 inDataSection = false;
-                currentAddress = TEXT_BASE_ADDRESS;
+                currentAddress = TEXT_SEGMENT_START;
             }
             continue;
         }

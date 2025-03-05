@@ -1,6 +1,7 @@
 directions.txt
 input.asm
 /*.exe
+/*.txt
 /.vscode/
 /src/temp
 output.mc

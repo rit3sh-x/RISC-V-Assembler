@@ -35,9 +35,9 @@ private:
     uint32_t generateRType(const std::string& opcode, const std::vector<std::string>& operands);
     uint32_t generateIType(const std::string& opcode, const std::vector<std::string>& operands);
     uint32_t generateSType(const std::string& opcode, const std::vector<std::string>& operands);
-    uint32_t generateSBType(const std::string& opcode, const std::vector<std::string>& operands);
+    uint32_t generateSBType(const std::string& opcode, const std::vector<std::string>& operands, uint32_t currentAddress);
     uint32_t generateUType(const std::string& opcode, const std::vector<std::string>& operands);
-    uint32_t generateUJType(const std::string& opcode, const std::vector<std::string>& operands);
+    uint32_t generateUJType(const std::string& opcode, const std::vector<std::string>& operands, uint32_t currentAddress);
     uint32_t generateStandalone(const std::string& opcode);
     
     int32_t getRegisterNumber(const std::string& reg) const;
@@ -136,13 +136,13 @@ void Assembler::processTextSegment(const std::vector<ParsedInstruction>& instruc
                 machineInstruction = generateSType(inst.opcode, inst.operands);
             }
             else if (riscv::SBTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
-                machineInstruction = generateSBType(inst.opcode, inst.operands);
+                machineInstruction = generateSBType(inst.opcode, inst.operands, currentAddress);
             }
             else if (riscv::UTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
                 machineInstruction = generateUType(inst.opcode, inst.operands);
             }
             else if (riscv::UJTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
-                machineInstruction = generateUJType(inst.opcode, inst.operands);
+                machineInstruction = generateUJType(inst.opcode, inst.operands, currentAddress);
             }
             else {
                 reportError("Unknown instruction type for opcode: " + inst.opcode);
@@ -259,12 +259,13 @@ uint32_t Assembler::generateSType(const std::string& opcode, const std::vector<s
            opcodeInfo.opcode;
 }
 
-uint32_t Assembler::generateSBType(const std::string& opcode, const std::vector<std::string>& operands) {
+uint32_t Assembler::generateSBType(const std::string& opcode, const std::vector<std::string>& operands, uint32_t currentAddress) {
     auto opcodeInfo = getOpcodeInfo(opcode);
     
     int32_t rs1 = getRegisterNumber(operands[0]);
     int32_t rs2 = getRegisterNumber(operands[1]);
-    int32_t offset = std::stoi(operands[2]);
+    uint32_t targetAddress = std::stoul(operands[2], nullptr, 0);
+    int32_t offset = calculateRelativeOffset(currentAddress, targetAddress);
 
     if (rs1 < 0 || rs2 < 0) {
         throw std::runtime_error("Invalid register in SB-type instruction");
@@ -304,24 +305,25 @@ uint32_t Assembler::generateUType(const std::string& opcode, const std::vector<s
            opcodeInfo.opcode;
 }
 
-uint32_t Assembler::generateUJType(const std::string& opcode, const std::vector<std::string>& operands) {
+uint32_t Assembler::generateUJType(const std::string& opcode, const std::vector<std::string>& operands, uint32_t currentAddress) {
     auto opcodeInfo = getOpcodeInfo(opcode);
     
     int32_t rd = getRegisterNumber(operands[0]);
-    int32_t offset = std::stoi(operands[1]);
+    uint32_t targetAddress = std::stoul(operands[1], nullptr, 0);
+    int32_t offset = calculateRelativeOffset(currentAddress, targetAddress);
 
     if (rd < 0) {
         throw std::runtime_error("Invalid register in UJ-type instruction");
     }
 
     if (offset < -1048576 || offset > 1048575 || (offset & 1)) {
-        throw std::runtime_error("Invalid jump offset");
+        throw std::runtime_error("Invalid jump offset (must be even and within ±1MiB)");
     }
 
     uint32_t imm20 = (offset >> 20) & 0x1;
-    uint32_t imm19_12 = (offset >> 12) & 0xFF;
-    uint32_t imm11 = (offset >> 11) & 0x1;
     uint32_t imm10_1 = (offset >> 1) & 0x3FF;
+    uint32_t imm11 = (offset >> 11) & 0x1;
+    uint32_t imm19_12 = (offset >> 12) & 0xFF;
 
     return (imm20 << 31) |
            (imm10_1 << 21) |
@@ -365,7 +367,7 @@ bool Assembler::writeToFile(const std::string& filename) {
 
     const auto& symbolTable = parser.getSymbolTable();
 
-    outFile << "-------------DATA-------------\n";
+    outFile << "################    DATA    #################\n";
     bool hasDataSegment = false;
     for (const auto& pair : sortedCode) {
         if (pair.first >= DATA_SEGMENT_START) {
@@ -396,7 +398,7 @@ bool Assembler::writeToFile(const std::string& filename) {
     }
     if (hasDataSegment) outFile << "\n";
 
-    outFile << "-------------TEXT-------------\n";
+    outFile << "################    TEXT    #################\n";
     for (const auto& pair : sortedCode) {
         if (pair.first < DATA_SEGMENT_START) {
             uint32_t addr = pair.first;
@@ -456,7 +458,10 @@ void Assembler::reportError(const std::string& message) const {
 }
 
 uint32_t Assembler::calculateRelativeOffset(uint32_t currentAddress, uint32_t targetAddress) const {
-    return targetAddress - currentAddress;
+    // Calculate PC-relative offset in bytes
+    // For branches and jumps, PC is the address of the instruction
+    int32_t offset = static_cast<int32_t>(targetAddress - currentAddress);
+    return offset;
 }
 
 #endif

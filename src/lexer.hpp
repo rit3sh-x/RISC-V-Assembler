@@ -53,7 +53,6 @@ std::string Lexer::tokenTypeToString(TokenType type) {
         case TokenType::DIRECTIVE: return "DIRECTIVE";
         case TokenType::STRING: return "STRING";
         case TokenType::ERROR: return "ERROR";
-        case TokenType::STANDALONE: return "STANDALONE";
         case TokenType::UNKNOWN: return "UNKNOWN";
         default: return "INVALID";
     }
@@ -120,9 +119,6 @@ Token Lexer::classifyToken(const std::string& token, int lineNumber) {
     std::string trimmed = trim(token);
     if (trimmed.empty()) return {TokenType::UNKNOWN, "", lineNumber};
 
-    if (standaloneOpcodes.count(trimmed)) {
-        return {TokenType::STANDALONE, trimmed, lineNumber};
-    }
     if (opcodes.count(trimmed)) {
         return {TokenType::OPCODE, trimmed, lineNumber};
     }
@@ -137,11 +133,7 @@ Token Lexer::classifyToken(const std::string& token, int lineNumber) {
     }
     if (isLabel(trimmed)) {
         std::string labelName = trimmed.substr(0, trimmed.length() - 1);
-        definedLabels.insert(labelName);
         return {TokenType::LABEL, labelName, lineNumber};
-    }
-    if (definedLabels.count(trimmed)) {
-        return {TokenType::LABEL, trimmed, lineNumber};
     }
     return {TokenType::UNKNOWN, trimmed, lineNumber};
 }
@@ -172,7 +164,7 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
                 } else {
                     Token t = classifyToken(token, lineNumber);
                     tokens.push_back(t);
-                    lastWasOpcode = (t.type == TokenType::OPCODE || t.type == TokenType::STANDALONE);
+                    lastWasOpcode = (t.type == TokenType::OPCODE);
                     if (t.type == TokenType::OPCODE) expectOperand = true;
                     else if (expectOperand && (t.type == TokenType::REGISTER || t.type == TokenType::IMMEDIATE)) expectOperand = false;
                 }
@@ -194,7 +186,7 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
                     } else {
                         Token t = classifyToken(token, lineNumber);
                         tokens.push_back(t);
-                        lastWasOpcode = (t.type == TokenType::OPCODE || t.type == TokenType::STANDALONE);
+                        lastWasOpcode = (t.type == TokenType::OPCODE);
                         if (t.type == TokenType::OPCODE) expectOperand = true;
                         if (lastWasOpcode && i + 1 < trimmedLine.length() && trimmedLine[i + 1] == ',') {
                             std::cerr << "Lexer Error on Line " << lineNumber << ": Unexpected comma after opcode\n";
@@ -224,7 +216,7 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
                 } else {
                     Token t = classifyToken(token, lineNumber);
                     tokens.push_back(t);
-                    lastWasOpcode = (t.type == TokenType::OPCODE || t.type == TokenType::STANDALONE);
+                    lastWasOpcode = (t.type == TokenType::OPCODE);
                     if (t.type == TokenType::OPCODE) expectOperand = true;
                     else if (expectOperand && (t.type == TokenType::REGISTER || t.type == TokenType::IMMEDIATE)) expectOperand = false;
                 }
@@ -247,7 +239,7 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
                 } else {
                     Token t = classifyToken(token, lineNumber);
                     tokens.push_back(t);
-                    lastWasOpcode = (t.type == TokenType::OPCODE || t.type == TokenType::STANDALONE);
+                    lastWasOpcode = (t.type == TokenType::OPCODE);
                     if (t.type == TokenType::OPCODE) expectOperand = true;
                     else if (expectOperand && (t.type == TokenType::REGISTER || t.type == TokenType::IMMEDIATE)) expectOperand = false;
                 }
@@ -280,7 +272,7 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
         } else {
             Token t = classifyToken(token, lineNumber);
             tokens.push_back(t);
-            lastWasOpcode = (t.type == TokenType::OPCODE || t.type == TokenType::STANDALONE);
+            lastWasOpcode = (t.type == TokenType::OPCODE);
             if (t.type == TokenType::OPCODE) expectOperand = true;
             else if (expectOperand && (t.type == TokenType::REGISTER || t.type == TokenType::IMMEDIATE)) expectOperand = false;
         }

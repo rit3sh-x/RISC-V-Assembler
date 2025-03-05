@@ -126,10 +126,7 @@ void Assembler::processTextSegment(const std::vector<ParsedInstruction>& instruc
         uint32_t machineInstruction = 0;
 
         try {
-            if (riscv::standaloneOpcodes.count(inst.opcode)) {
-                machineInstruction = generateStandalone(inst.opcode);
-            }
-            else if (riscv::RTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
+            if (riscv::RTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
                 machineInstruction = generateRType(inst.opcode, inst.operands);
             }
             else if (riscv::ITypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
@@ -334,16 +331,6 @@ uint32_t Assembler::generateUJType(const std::string& opcode, const std::vector<
            opcodeInfo.opcode;
 }
 
-uint32_t Assembler::generateStandalone(const std::string& opcode) {
-    if (opcode == "ecall") {
-        return 0x00000073;
-    }
-    else if (opcode == "ebreak") {
-        return 0x00100073;
-    }
-    throw std::runtime_error("Unknown standalone instruction: " + opcode);
-}
-
 int32_t Assembler::getRegisterNumber(const std::string& reg) const {
     if (reg[0] == 'x') {
         try {
@@ -378,7 +365,7 @@ bool Assembler::writeToFile(const std::string& filename) {
 
     const auto& symbolTable = parser.getSymbolTable();
 
-    outFile << "-------------DATA------------\n";
+    outFile << "-------------DATA-------------\n";
     bool hasDataSegment = false;
     for (const auto& pair : sortedCode) {
         if (pair.first >= DATA_SEGMENT_START) {
@@ -409,7 +396,7 @@ bool Assembler::writeToFile(const std::string& filename) {
     }
     if (hasDataSegment) outFile << "\n";
 
-    outFile << "-------------TEXT------------\n";
+    outFile << "-------------TEXT-------------\n";
     for (const auto& pair : sortedCode) {
         if (pair.first < DATA_SEGMENT_START) {
             uint32_t addr = pair.first;

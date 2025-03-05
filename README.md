@@ -41,7 +41,7 @@ Follow these steps to compile and run the assembler:
 
 2. **Compile the assembler**:
     ```bash
-    g++ -o riscv_assembler main.cpp
+    g++ -o riscv_assembler assembler.cpp
     ```
 
 3. **Run the assembler**:

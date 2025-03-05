@@ -23,11 +23,8 @@ namespace riscv
         DIRECTIVE,
         UNKNOWN,
         ERROR,
-        STRING,
-        STANDALONE
+        STRING
     };
-
-    static std::unordered_set<std::string> definedLabels;
 
     static const std::unordered_set<std::string> opcodes = {
         "add", "sub", "mul", "div", "rem", "and", "or", "xor", "sll", "slt", "sra", "srl",
@@ -36,8 +33,6 @@ namespace riscv
         "beq", "bne", "bge", "blt",
         "auipc", "lui", "jal",
         "slti", "sltiu", "xori", "srli", "srai", "bgeu", "bltu"};
-
-    static const std::unordered_set<std::string> standaloneOpcodes = {"ecall", "ebreak"};
 
     static const std::unordered_map<std::string, int> directives = {
         {".text", 0},

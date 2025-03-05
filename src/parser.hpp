@@ -79,7 +79,7 @@ std::vector<Token>::const_iterator Parser::findNextDirectiveOrOpcode(const std::
 {
     for (auto it = start; it != line.end(); ++it)
     {
-        if (it->type == TokenType::DIRECTIVE || it->type == TokenType::OPCODE || it->type == TokenType::STANDALONE)
+        if (it->type == TokenType::DIRECTIVE || it->type == TokenType::OPCODE)
         {
             return it;
         }
@@ -147,13 +147,13 @@ bool Parser::processFirstPass()
                     addLabel(currentToken.value);
                     tokenIndex++;
                     if (tokenIndex < line.size() &&
-                        (line[tokenIndex].type == TokenType::OPCODE || line[tokenIndex].type == TokenType::STANDALONE))
+                        (line[tokenIndex].type == TokenType::OPCODE))
                     {
                         currentAddress += INSTRUCTION_SIZE;
                     }
                 }
             }
-            else if (currentToken.type == TokenType::OPCODE || currentToken.type == TokenType::STANDALONE)
+            else if (currentToken.type == TokenType::OPCODE)
             {
                 currentAddress += INSTRUCTION_SIZE;
             }
@@ -365,7 +365,7 @@ bool Parser::processSecondPass()
                 tokenIndex++;
 
                 if (tokenIndex < line.size() &&
-                    (line[tokenIndex].type == TokenType::OPCODE || line[tokenIndex].type == TokenType::STANDALONE))
+                    (line[tokenIndex].type == TokenType::OPCODE))
                 {
 
                     std::vector<Token> instructionTokens;
@@ -385,7 +385,7 @@ bool Parser::processSecondPass()
                     }
                 }
             }
-            else if (currentToken.type == TokenType::OPCODE || currentToken.type == TokenType::STANDALONE)
+            else if (currentToken.type == TokenType::OPCODE)
             {
                 std::vector<Token> instructionTokens;
                 while (tokenIndex < line.size() && line[tokenIndex].type != TokenType::DIRECTIVE && line[tokenIndex].type != TokenType::LABEL)
@@ -429,7 +429,7 @@ bool Parser::handleInstruction(const std::vector<Token> &line)
     std::string opcode = line[0].value;
     std::vector<std::string> operands;
 
-    if (riscv::opcodes.count(opcode) == 0 && riscv::standaloneOpcodes.count(opcode) == 0)
+    if (riscv::opcodes.count(opcode) == 0)
     {
         reportError("Unknown opcode '" + opcode + "'", line[0].lineNumber);
         return false;

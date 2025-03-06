@@ -365,35 +365,12 @@ bool Assembler::writeToFile(const std::string& filename) {
     outFile << std::hex << std::uppercase;
     outFile.fill('0');
 
-    const auto& symbolTable = parser.getSymbolTable();
-
     outFile << "################    DATA    #################\n";
     bool hasDataSegment = false;
     for (const auto& pair : sortedCode) {
         if (pair.first >= DATA_SEGMENT_START) {
             hasDataSegment = true;
-            outFile << "0x" << std::setw(8) << pair.first << " 0x" << std::setw(8) << pair.second;
-            
-            bool isStringData = false;
-            for (const auto& symbol : symbolTable) {
-                const auto& entry = symbol.second;
-                if (pair.first >= entry.address && 
-                    pair.first < entry.address + (entry.isString ? entry.stringValue.length() + 1 : entry.numericValues.size() * 4)) {
-                    isStringData = entry.isString;
-                    break;
-                }
-            }
-
-            if (isStringData) {
-                if (pair.second == 0) {
-                    outFile << "    # Null terminator";
-                } else {
-                    outFile << "    # ASCII: '" << static_cast<char>(pair.second) << "'";
-                }
-            } else {
-                outFile << "    # Decimal value: " << std::dec << pair.second << std::hex;
-            }
-            outFile << "\n";
+            outFile << "0x" << std::setw(8) << pair.first << " 0x" << std::setw(8) << pair.second << "\n";
         }
     }
     if (hasDataSegment) outFile << "\n";
@@ -404,51 +381,101 @@ bool Assembler::writeToFile(const std::string& filename) {
             uint32_t addr = pair.first;
             uint32_t instruction = pair.second;
 
-            outFile << "0x" << std::setw(8) << addr << " 0x" << std::setw(8) << instruction;
-
             if (instruction == 0xDEADBEEF) {
-                outFile << "    # [TEXT_SEGMENT_END]   | Binary: ";
-            } else {
-                uint32_t opcode = instruction & 0x7F;
-                uint32_t rd = (instruction >> 7) & 0x1F;
-                uint32_t funct3 = (instruction >> 12) & 0x7;
-                uint32_t rs1 = (instruction >> 15) & 0x1F;
-                uint32_t rs2 = (instruction >> 20) & 0x1F;
-                uint32_t funct7 = (instruction >> 25) & 0x7F;
-
-                std::string instType;
-                if (opcode == 0b0110011) {
-                    instType = "R-type: ";
-                } else if (opcode == 0b0010011 || opcode == 0b0000011) {
-                    instType = "I-type: ";
-                } else if (opcode == 0b0100011) {
-                    instType = "S-type: ";
-                } else if (opcode == 0b1100011) {
-                    instType = "SB-type: ";
-                } else if (opcode == 0b0110111 || opcode == 0b0010111) {
-                    instType = "U-type: ";
-                } else if (opcode == 0b1101111) {
-                    instType = "UJ-type: ";
-                } else if (instruction == 0x00000073) {
-                    instType = "System: ";
-                }
-
-                outFile << "    # " << instType;
+                outFile << "0x" << std::setw(8) << addr << " 0x" << std::setw(8) << instruction << " , [TEXT_SEGMENT_END]\n";
+                continue;
             }
 
-            std::bitset<32> bits(instruction);
-            std::string binStr = bits.to_string();
-            outFile << binStr.substr(0, 7) << "-"
-                   << binStr.substr(7, 5) << "-"
-                   << binStr.substr(12, 3) << "-"
-                   << binStr.substr(15, 5) << "-"
-                   << binStr.substr(20, 5) << "-"
-                   << binStr.substr(25, 7);
-            outFile << "\n";
+            uint32_t opcode = instruction & 0x7F;
+            uint32_t rd = (instruction >> 7) & 0x1F;
+            uint32_t funct3 = (instruction >> 12) & 0x7;
+            uint32_t rs1 = (instruction >> 15) & 0x1F;
+            uint32_t rs2 = (instruction >> 20) & 0x1F;
+            uint32_t funct7 = (instruction >> 25) & 0x7F;
+            
+            std::string instStr;
+            std::string opcodeStr;
+            std::string func3Str;
+            std::string func7Str;
+            std::string rdStr;
+            std::string rs1Str;
+            std::string rs2Str;
+            std::string immStr;
+
+            if (opcode == 0b0110011) {
+                instStr = "add x" + std::to_string(rd) + ",x" + std::to_string(rs1) + ",x" + std::to_string(rs2);
+                opcodeStr = "0110011";
+                func3Str = std::bitset<3>(funct3).to_string();
+                func7Str = std::bitset<7>(funct7).to_string();
+                rdStr = std::bitset<5>(rd).to_string();
+                rs1Str = std::bitset<5>(rs1).to_string();
+                rs2Str = std::bitset<5>(rs2).to_string();
+                immStr = "NULL";
+            }
+            else if (opcode == 0b0010011 || opcode == 0b0000011) {
+                int32_t imm = (instruction >> 20);
+                instStr = "andi x" + std::to_string(rd) + ",x" + std::to_string(rs1) + "," + std::to_string(imm);
+                opcodeStr = "0010011";
+                func3Str = std::bitset<3>(funct3).to_string();
+                func7Str = "NULL";
+                rdStr = std::bitset<5>(rd).to_string();
+                rs1Str = std::bitset<5>(rs1).to_string();
+                rs2Str = "NULL";
+                immStr = std::bitset<12>(imm).to_string();
+            }
+            else if (opcode == 0b0100011) {
+                instStr = "sw x" + std::to_string(rs2) + ", " + std::to_string(instruction >> 20) + "(x" + std::to_string(rs1) + ")";
+                opcodeStr = "0100011";
+                func3Str = "010";
+                func7Str = "NULL";
+                rdStr = "NULL";
+                rs1Str = std::bitset<5>(rs1).to_string();
+                rs2Str = std::bitset<5>(rs2).to_string();
+                immStr = std::bitset<12>(instruction >> 20).to_string();
+            }
+            else if (opcode == 0b1100011) {
+                instStr = "beq x" + std::to_string(rs1) + ", x" + std::to_string(rs2) + ", " + std::to_string(instruction >> 20);
+                opcodeStr = "1100011";
+                func3Str = "000";
+                func7Str = "NULL";
+                rdStr = "NULL";
+                rs1Str = std::bitset<5>(rs1).to_string();
+                rs2Str = std::bitset<5>(rs2).to_string();
+                immStr = std::bitset<13>(instruction >> 20).to_string();
+            }
+            else if (opcode == 0b0110111 || opcode == 0b0010111) {
+                instStr = "lui x" + std::to_string(rd) + ", " + std::to_string(instruction >> 20);
+                opcodeStr = "0110111";
+                func3Str = "NULL";
+                func7Str = "NULL";
+                rdStr = std::bitset<5>(rd).to_string();
+                rs1Str = "NULL";
+                rs2Str = "NULL";
+                immStr = std::bitset<20>(instruction >> 20).to_string();
+            }
+            else if (opcode == 0b1101111) {
+                instStr = "jal x" + std::to_string(rd) + ", " + std::to_string(instruction >> 20);
+                opcodeStr = "1101111";
+                func3Str = "NULL";
+                func7Str = "NULL";
+                rdStr = std::bitset<5>(rd).to_string();
+                rs1Str = "NULL";
+                rs2Str = "NULL";
+                immStr = std::bitset<21>(instruction >> 20).to_string();
+            }
+
+            outFile << "0x" << std::setw(1) << addr << " 0x" << std::setw(8) << instruction 
+                   << " , " << instStr << " # " 
+                   << opcodeStr << "-" 
+                   << func3Str << "-"
+                   << func7Str << "-"
+                   << rdStr << "-"
+                   << rs1Str << "-"
+                   << rs2Str << "-"
+                   << immStr << "\n";
         }
     }
     outFile << "\n";
-
     return true;
 }
 

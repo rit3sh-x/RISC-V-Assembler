@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iomanip>
 #include <bitset>
+#include <sstream>
 #include "parser.hpp"
 #include "types.hpp"
 
@@ -41,13 +42,17 @@ private:
     uint32_t generateStandalone(const std::string& opcode);
     
     int32_t getRegisterNumber(const std::string& reg) const;
+    int32_t parseImmediate(const std::string& imm) const;
     void reportError(const std::string& message) const;
     uint32_t calculateRelativeOffset(uint32_t currentAddress, uint32_t targetAddress) const;
+    std::string decodeInstruction(uint32_t instruction) const;
 
     OpcodeInfo getOpcodeInfo(const std::string& opcode) const;
 
     void processTextSegment(const std::vector<ParsedInstruction>& instructions);
     void processDataSegment(const std::unordered_map<std::string, SymbolEntry>& symbolTable);
+
+    void formatInstruction(std::ofstream& outFile, uint32_t addr, uint32_t instruction) const;
 };
 
 Assembler::Assembler(const Parser& p) : parser(p), errorCount(0) {}
@@ -216,7 +221,7 @@ uint32_t Assembler::generateIType(const std::string& opcode, const std::vector<s
     
     int32_t rd = getRegisterNumber(operands[0]);
     int32_t rs1 = getRegisterNumber(operands[1]);
-    int32_t imm = std::stoi(operands[2]);
+    int32_t imm = parseImmediate(operands[2]);
 
     if (rd < 0 || rs1 < 0) {
         throw std::runtime_error("Invalid register in I-type instruction");
@@ -238,7 +243,7 @@ uint32_t Assembler::generateSType(const std::string& opcode, const std::vector<s
     
     int32_t rs2 = getRegisterNumber(operands[0]);
     int32_t rs1 = getRegisterNumber(operands[2]);
-    int32_t imm = std::stoi(operands[1]);
+    int32_t imm = parseImmediate(operands[1]);
 
     if (rs1 < 0 || rs2 < 0) {
         throw std::runtime_error("Invalid register in S-type instruction");
@@ -291,18 +296,39 @@ uint32_t Assembler::generateSBType(const std::string& opcode, const std::vector<
 }
 
 uint32_t Assembler::generateUType(const std::string& opcode, const std::vector<std::string>& operands) {
+    if (operands.size() != 2) {
+        throw std::runtime_error("U-type instruction requires exactly 2 operands");
+    }
+
     auto opcodeInfo = getOpcodeInfo(opcode);
     
     int32_t rd = getRegisterNumber(operands[0]);
-    int32_t imm = std::stoi(operands[1]);
-
     if (rd < 0) {
-        throw std::runtime_error("Invalid register in U-type instruction");
+        throw std::runtime_error("Invalid destination register '" + operands[0] + "' in U-type instruction");
     }
 
-    return (imm & 0xFFFFF000) |
-           (rd << 7) |
-           opcodeInfo.opcode;
+    try {
+        int32_t imm = parseImmediate(operands[1]);
+        
+        // For lui/auipc, handle the immediate value appropriately
+        if (opcode == "lui" || opcode == "auipc") {
+            // If the immediate is a full 32-bit value
+            if ((imm & 0xFFF) != 0) {
+                imm = imm >> 12;
+            }
+            
+            // Validate the range after shifting
+            if (imm < 0 || imm > 0xFFFFF) {
+                throw std::runtime_error("Immediate value out of range for U-type instruction (must be between 0 and 0xFFFFF)");
+            }
+        }
+
+        return (imm & 0xFFFFF) << 12 |
+               (rd << 7) |
+               opcodeInfo.opcode;
+    } catch (const std::exception& e) {
+        throw std::runtime_error("Error in U-type instruction: " + std::string(e.what()));
+    }
 }
 
 uint32_t Assembler::generateUJType(const std::string& opcode, const std::vector<std::string>& operands, uint32_t currentAddress) {
@@ -334,153 +360,300 @@ uint32_t Assembler::generateUJType(const std::string& opcode, const std::vector<
 }
 
 int32_t Assembler::getRegisterNumber(const std::string& reg) const {
-    if (reg[0] == 'x') {
-        try {
-            int num = std::stoi(reg.substr(1));
-            if (num >= 0 && num <= 31) {
-                return num;
-            }
-        } catch (...) {}
+    if (reg.empty()) {
+        return -1;
     }
-    
-    for (int i = 0; i <= 31; i++) {
-        if (riscv::validRegisters.find(reg) != riscv::validRegisters.end()) {
-            return i;
+
+    // Remove any whitespace
+    std::string cleanReg = reg;
+    cleanReg.erase(std::remove_if(cleanReg.begin(), cleanReg.end(), ::isspace), cleanReg.end());
+
+    try {
+        if (cleanReg[0] == 'x' || cleanReg[0] == 'a' || cleanReg[0] == 's' || cleanReg[0] == 't') {
+            if (cleanReg[0] == 'x') {
+                if (cleanReg.length() < 2) return -1;
+                int num = std::stoi(cleanReg.substr(1));
+                if (num >= 0 && num <= 31) return num;
+            } else if (cleanReg[0] == 'a') {
+                if (cleanReg.length() < 2) return -1;
+                int num = std::stoi(cleanReg.substr(1));
+                if (num >= 0 && num <= 7) return num + 10;
+            } else if (cleanReg[0] == 's') {
+                if (cleanReg == "sp") return 2;
+                if (cleanReg.length() < 2) return -1;
+                int num = std::stoi(cleanReg.substr(1));
+                if (num >= 0 && num <= 11) return num + 8;
+            } else if (cleanReg[0] == 't') {
+                if (cleanReg.length() < 2) return -1;
+                int num = std::stoi(cleanReg.substr(1));
+                if (num >= 0 && num <= 6) return num + 5;
+            }
         }
+        
+        if (riscv::validRegisters.find(cleanReg) != riscv::validRegisters.end()) {
+            return std::distance(riscv::validRegisters.begin(), riscv::validRegisters.find(cleanReg));
+        }
+    } catch (const std::exception& e) {
+        // Log the error but return -1 to maintain the function's contract
+        reportError("Error parsing register '" + reg + "': " + e.what());
     }
     
     return -1;
 }
 
+int32_t Assembler::parseImmediate(const std::string& imm) const {
+    try {
+        // Remove any whitespace
+        std::string cleanImm = imm;
+        cleanImm.erase(std::remove_if(cleanImm.begin(), cleanImm.end(), ::isspace), cleanImm.end());
+        
+        if (cleanImm.empty()) {
+            throw std::runtime_error("Empty immediate value");
+        }
+
+        // Handle negative numbers
+        bool isNegative = cleanImm[0] == '-';
+        if (isNegative) {
+            cleanImm = cleanImm.substr(1);
+        }
+
+        // Handle hexadecimal values (both with and without 0x prefix)
+        if (cleanImm.find("0x") == 0 || cleanImm.find("0X") == 0) {
+            uint32_t value = std::stoul(cleanImm, nullptr, 16);
+            return isNegative ? -static_cast<int32_t>(value) : static_cast<int32_t>(value);
+        }
+
+        // Check if it's a hex value without 0x prefix
+        bool isHex = false;
+        for (char c : cleanImm) {
+            if ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+                isHex = true;
+                break;
+            }
+        }
+        
+        if (isHex) {
+            uint32_t value = std::stoul(cleanImm, nullptr, 16);
+            return isNegative ? -static_cast<int32_t>(value) : static_cast<int32_t>(value);
+        }
+
+        // Validate decimal string
+        for (char c : cleanImm) {
+            if (!std::isdigit(c)) {
+                throw std::runtime_error("Invalid character in decimal immediate: " + cleanImm);
+            }
+        }
+
+        // Handle decimal values
+        int32_t value = std::stol(cleanImm, nullptr, 10);
+        return isNegative ? -value : value;
+    } catch (const std::exception& e) {
+        throw std::runtime_error("Invalid immediate value '" + imm + "': " + e.what());
+    }
+}
+
 bool Assembler::writeToFile(const std::string& filename) {
-    std::ofstream outFile(filename);
-    if (!outFile) {
-        reportError("Could not open output file: " + filename);
+    try {
+        std::ofstream outFile(filename);
+        if (!outFile) {
+            throw std::runtime_error("Could not open output file: " + filename);
+        }
+
+        std::vector<std::pair<uint32_t, uint32_t>> sortedCode = machineCode;
+        std::sort(sortedCode.begin(), sortedCode.end(), 
+                 [](const auto& a, const auto& b) { return a.first < b.first; });
+
+        outFile << std::hex << std::uppercase;
+        outFile.fill('0');
+
+        // Validate segment boundaries with more detailed error messages
+        for (const auto& pair : sortedCode) {
+            if (pair.first < TEXT_SEGMENT_START) {
+                std::stringstream ss;
+                ss << std::hex << "Invalid address (0x" << pair.first 
+                   << ") below text segment start (0x" << TEXT_SEGMENT_START << ")";
+                throw std::runtime_error(ss.str());
+            }
+            
+            // Only validate text and data segments
+            if (pair.first < DATA_SEGMENT_START) {
+                // Text segment validation
+                if (pair.first >= DATA_SEGMENT_START) {
+                    std::stringstream ss;
+                    ss << std::hex << "Invalid text segment address (0x" << pair.first 
+                       << ") exceeds text segment boundary (0x" << DATA_SEGMENT_START << ")";
+                    throw std::runtime_error(ss.str());
+                }
+            } else if (pair.first >= DATA_SEGMENT_START && pair.first < HEAP_SEGMENT_START) {
+                // Data segment validation
+                if (pair.first >= HEAP_SEGMENT_START) {
+                    std::stringstream ss;
+                    ss << std::hex << "Invalid data segment address (0x" << pair.first 
+                       << ") exceeds data segment boundary (0x" << HEAP_SEGMENT_START << ")";
+                    throw std::runtime_error(ss.str());
+                }
+            }
+        }
+
+        // Write data segment
+        outFile << "################    DATA    #################\n";
+        bool hasDataSegment = false;
+        for (const auto& pair : sortedCode) {
+            if (pair.first >= DATA_SEGMENT_START && pair.first < HEAP_SEGMENT_START) {
+                hasDataSegment = true;
+                outFile << "0x" << std::setw(8) << pair.first << " 0x" << std::setw(8) << pair.second << "\n";
+            }
+        }
+        if (hasDataSegment) outFile << "\n";
+
+        // Write text segment
+        outFile << "################    TEXT    #################\n";
+        for (const auto& pair : sortedCode) {
+            if (pair.first < DATA_SEGMENT_START) {
+                formatInstruction(outFile, pair.first, pair.second);
+            }
+        }
+        outFile << "\n";
+        return true;
+    } catch (const std::exception& e) {
+        reportError("File writing error: " + std::string(e.what()));
         return false;
     }
+}
 
-    std::vector<std::pair<uint32_t, uint32_t>> sortedCode = machineCode;
-    std::sort(sortedCode.begin(), sortedCode.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+std::string Assembler::decodeInstruction(uint32_t instruction) const {
+    uint32_t opcode = instruction & 0x7F;
+    uint32_t rd = (instruction >> 7) & 0x1F;
+    uint32_t funct3 = (instruction >> 12) & 0x7;
+    uint32_t rs1 = (instruction >> 15) & 0x1F;
+    uint32_t rs2 = (instruction >> 20) & 0x1F;
+    uint32_t funct7 = (instruction >> 25) & 0x7F;
+    
+    std::stringstream ss;
 
-    outFile << std::hex << std::uppercase;
-    outFile.fill('0');
-
-    outFile << "################    DATA    #################\n";
-    bool hasDataSegment = false;
-    for (const auto& pair : sortedCode) {
-        if (pair.first >= DATA_SEGMENT_START) {
-            hasDataSegment = true;
-            outFile << "0x" << std::setw(8) << pair.first << " 0x" << std::setw(8) << pair.second << "\n";
+    // R-type
+    if (opcode == 0b0110011) {
+        if (funct3 == 0b000 && funct7 == 0b0000000) ss << "add";
+        else if (funct3 == 0b000 && funct7 == 0b0100000) ss << "sub";
+        else if (funct3 == 0b001 && funct7 == 0b0000000) ss << "sll";
+        else if (funct3 == 0b010 && funct7 == 0b0000000) ss << "slt";
+        else if (funct3 == 0b011 && funct7 == 0b0000000) ss << "sltu";
+        else if (funct3 == 0b100 && funct7 == 0b0000000) ss << "xor";
+        else if (funct3 == 0b101 && funct7 == 0b0000000) ss << "srl";
+        else if (funct3 == 0b101 && funct7 == 0b0100000) ss << "sra";
+        else if (funct3 == 0b110 && funct7 == 0b0000000) ss << "or";
+        else if (funct3 == 0b111 && funct7 == 0b0000000) ss << "and";
+        ss << " x" << rd << ",x" << rs1 << ",x" << rs2;
+    }
+    // I-type
+    else if (opcode == 0b0010011 || opcode == 0b0000011) {
+        int32_t imm = (instruction >> 20);
+        if (opcode == 0b0010011) {
+            if (funct3 == 0b000) ss << "addi";
+            else if (funct3 == 0b010) ss << "slti";
+            else if (funct3 == 0b011) ss << "sltiu";
+            else if (funct3 == 0b100) ss << "xori";
+            else if (funct3 == 0b110) ss << "ori";
+            else if (funct3 == 0b111) ss << "andi";
+            ss << " x" << rd << ",x" << rs1 << "," << imm;
+        } else {
+            if (funct3 == 0b000) ss << "lb";
+            else if (funct3 == 0b001) ss << "lh";
+            else if (funct3 == 0b010) ss << "lw";
+            else if (funct3 == 0b100) ss << "lbu";
+            else if (funct3 == 0b101) ss << "lhu";
+            ss << " x" << rd << "," << imm << "(x" << rs1 << ")";
         }
     }
-    if (hasDataSegment) outFile << "\n";
-
-    outFile << "################    TEXT    #################\n";
-    for (const auto& pair : sortedCode) {
-        if (pair.first < DATA_SEGMENT_START) {
-            uint32_t addr = pair.first;
-            uint32_t instruction = pair.second;
-
-            if (instruction == 0xDEADBEEF) {
-                outFile << "0x" << std::setw(8) << addr << " 0x" << std::setw(8) << instruction << " , [TEXT_SEGMENT_END]\n";
-                continue;
-            }
-
-            uint32_t opcode = instruction & 0x7F;
-            uint32_t rd = (instruction >> 7) & 0x1F;
-            uint32_t funct3 = (instruction >> 12) & 0x7;
-            uint32_t rs1 = (instruction >> 15) & 0x1F;
-            uint32_t rs2 = (instruction >> 20) & 0x1F;
-            uint32_t funct7 = (instruction >> 25) & 0x7F;
-            
-            std::string instStr;
-            std::string opcodeStr;
-            std::string func3Str;
-            std::string func7Str;
-            std::string rdStr;
-            std::string rs1Str;
-            std::string rs2Str;
-            std::string immStr;
-
-            if (opcode == 0b0110011) {
-                instStr = "add x" + std::to_string(rd) + ",x" + std::to_string(rs1) + ",x" + std::to_string(rs2);
-                opcodeStr = "0110011";
-                func3Str = std::bitset<3>(funct3).to_string();
-                func7Str = std::bitset<7>(funct7).to_string();
-                rdStr = std::bitset<5>(rd).to_string();
-                rs1Str = std::bitset<5>(rs1).to_string();
-                rs2Str = std::bitset<5>(rs2).to_string();
-                immStr = "NULL";
-            }
-            else if (opcode == 0b0010011 || opcode == 0b0000011) {
-                int32_t imm = (instruction >> 20);
-                instStr = "andi x" + std::to_string(rd) + ",x" + std::to_string(rs1) + "," + std::to_string(imm);
-                opcodeStr = "0010011";
-                func3Str = std::bitset<3>(funct3).to_string();
-                func7Str = "NULL";
-                rdStr = std::bitset<5>(rd).to_string();
-                rs1Str = std::bitset<5>(rs1).to_string();
-                rs2Str = "NULL";
-                immStr = std::bitset<12>(imm).to_string();
-            }
-            else if (opcode == 0b0100011) {
-                instStr = "sw x" + std::to_string(rs2) + ", " + std::to_string(instruction >> 20) + "(x" + std::to_string(rs1) + ")";
-                opcodeStr = "0100011";
-                func3Str = "010";
-                func7Str = "NULL";
-                rdStr = "NULL";
-                rs1Str = std::bitset<5>(rs1).to_string();
-                rs2Str = std::bitset<5>(rs2).to_string();
-                immStr = std::bitset<12>(instruction >> 20).to_string();
-            }
-            else if (opcode == 0b1100011) {
-                instStr = "beq x" + std::to_string(rs1) + ", x" + std::to_string(rs2) + ", " + std::to_string(instruction >> 20);
-                opcodeStr = "1100011";
-                func3Str = "000";
-                func7Str = "NULL";
-                rdStr = "NULL";
-                rs1Str = std::bitset<5>(rs1).to_string();
-                rs2Str = std::bitset<5>(rs2).to_string();
-                immStr = std::bitset<13>(instruction >> 20).to_string();
-            }
-            else if (opcode == 0b0110111 || opcode == 0b0010111) {
-                instStr = "lui x" + std::to_string(rd) + ", " + std::to_string(instruction >> 20);
-                opcodeStr = "0110111";
-                func3Str = "NULL";
-                func7Str = "NULL";
-                rdStr = std::bitset<5>(rd).to_string();
-                rs1Str = "NULL";
-                rs2Str = "NULL";
-                immStr = std::bitset<20>(instruction >> 20).to_string();
-            }
-            else if (opcode == 0b1101111) {
-                instStr = "jal x" + std::to_string(rd) + ", " + std::to_string(instruction >> 20);
-                opcodeStr = "1101111";
-                func3Str = "NULL";
-                func7Str = "NULL";
-                rdStr = std::bitset<5>(rd).to_string();
-                rs1Str = "NULL";
-                rs2Str = "NULL";
-                immStr = std::bitset<21>(instruction >> 20).to_string();
-            }
-
-            outFile << "0x" << std::setw(1) << addr << " 0x" << std::setw(8) << instruction 
-                   << " , " << instStr << " # " 
-                   << opcodeStr << "-" 
-                   << func3Str << "-"
-                   << func7Str << "-"
-                   << rdStr << "-"
-                   << rs1Str << "-"
-                   << rs2Str << "-"
-                   << immStr << "\n";
-        }
+    // S-type
+    else if (opcode == 0b0100011) {
+        uint32_t imm11_5 = (instruction >> 25) & 0x7F;
+        uint32_t imm4_0 = (instruction >> 7) & 0x1F;
+        int32_t imm = (imm11_5 << 5) | imm4_0;
+        if (funct3 == 0b000) ss << "sb";
+        else if (funct3 == 0b001) ss << "sh";
+        else if (funct3 == 0b010) ss << "sw";
+        ss << " x" << rs2 << "," << imm << "(x" << rs1 << ")";
     }
-    outFile << "\n";
-    return true;
+    // SB-type
+    else if (opcode == 0b1100011) {
+        uint32_t imm12 = (instruction >> 31) & 0x1;
+        uint32_t imm11 = (instruction >> 7) & 0x1;
+        uint32_t imm10_5 = (instruction >> 25) & 0x3F;
+        uint32_t imm4_1 = (instruction >> 8) & 0xF;
+        int32_t imm = (imm12 << 12) | (imm11 << 11) | (imm10_5 << 5) | (imm4_1 << 1);
+        if (funct3 == 0b000) ss << "beq";
+        else if (funct3 == 0b001) ss << "bne";
+        else if (funct3 == 0b100) ss << "blt";
+        else if (funct3 == 0b101) ss << "bge";
+        else if (funct3 == 0b110) ss << "bltu";
+        else if (funct3 == 0b111) ss << "bgeu";
+        ss << " x" << rs1 << ",x" << rs2 << "," << imm;
+    }
+    // U-type
+    else if (opcode == 0b0110111 || opcode == 0b0010111) {
+        int32_t imm = (instruction & 0xFFFFF000);
+        if (opcode == 0b0110111) ss << "lui";
+        else ss << "auipc";
+        ss << " x" << rd << "," << (imm >> 12);
+    }
+    // UJ-type
+    else if (opcode == 0b1101111) {
+        uint32_t imm20 = (instruction >> 31) & 0x1;
+        uint32_t imm10_1 = (instruction >> 21) & 0x3FF;
+        uint32_t imm11 = (instruction >> 20) & 0x1;
+        uint32_t imm19_12 = (instruction >> 12) & 0xFF;
+        int32_t imm = (imm20 << 20) | (imm19_12 << 12) | (imm11 << 11) | (imm10_1 << 1);
+        ss << "jal x" << rd << "," << imm;
+    }
+    else {
+        ss << "unknown";
+    }
+
+    return ss.str();
+}
+
+void Assembler::formatInstruction(std::ofstream& outFile, uint32_t addr, uint32_t instruction) const {
+    try {
+        if (instruction == 0xDEADBEEF) {
+            outFile << "0x" << std::setw(8) << addr << " 0x" << std::setw(8) << instruction 
+                   << " , [TEXT_SEGMENT_END]\n";
+            return;
+        }
+
+        uint32_t opcode = instruction & 0x7F;
+        uint32_t rd = (instruction >> 7) & 0x1F;
+        uint32_t funct3 = (instruction >> 12) & 0x7;
+        uint32_t rs1 = (instruction >> 15) & 0x1F;
+        uint32_t rs2 = (instruction >> 20) & 0x1F;
+        uint32_t funct7 = (instruction >> 25) & 0x7F;
+
+        std::string instStr = decodeInstruction(instruction);
+        std::string opcodeStr = std::bitset<7>(opcode).to_string();
+        std::string func3Str = std::bitset<3>(funct3).to_string();
+        std::string func7Str = std::bitset<7>(funct7).to_string();
+        std::string rdStr = std::bitset<5>(rd).to_string();
+        std::string rs1Str = std::bitset<5>(rs1).to_string();
+        std::string rs2Str = std::bitset<5>(rs2).to_string();
+        std::string immStr = "NULL";
+
+        outFile << "0x" << std::setw(8) << addr << " 0x" << std::setw(8) << instruction 
+               << " , " << instStr << " # " 
+               << opcodeStr << "-" 
+               << func3Str << "-"
+               << func7Str << "-"
+               << rdStr << "-"
+               << rs1Str << "-"
+               << rs2Str << "-"
+               << immStr << "\n";
+    } catch (const std::exception& e) {
+        reportError("Error formatting instruction at address 0x" + 
+                   std::to_string(addr) + ": " + e.what());
+    }
 }
 
 void Assembler::reportError(const std::string& message) const {
-    std::cerr << "Assembler Error: " << message << "\n";
+    std::cerr << "\033[1;31mAssembler Error: " << message << "\033[0m\n";
     ++errorCount;
 }
 

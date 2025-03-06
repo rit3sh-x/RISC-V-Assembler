@@ -7,7 +7,6 @@ input.asm
 output.mc
 merge_sort.asm
 quick_sort.asm
-/frontend/*
 /pipeline/*
 /instruction_execution/*
 /wasm/*

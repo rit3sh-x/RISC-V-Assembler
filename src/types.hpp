@@ -32,7 +32,7 @@ namespace riscv
         "sb", "sh", "sw", "sd",
         "beq", "bne", "bge", "blt",
         "auipc", "lui", "jal",
-        "slti", "sltiu", "xori", "srli", "srai", "bgeu", "bltu"};
+        "slti", "sltiu", "xori", "srli", "srai", "bgeu", "bltu", "slli"};
 
     static const std::unordered_map<std::string, int> directives = {
         {".text", 0},
@@ -46,14 +46,67 @@ namespace riscv
         {".ascii", 0},
     };
 
-    static const std::unordered_map<std::string, std::string> validRegisters = {
-        {"zero", "x0"}, {"ra", "x1"}, {"sp", "x2"}, {"gp", "x3"}, {"tp", "x4"}, {"t0", "x5"}, {"t1", "x6"}, {"t2", "x7"}, {"s0", "x8"}, {"s1", "x9"}, {"a0", "x10"}, {"a1", "x11"}, {"a2", "x12"}, {"a3", "x13"}, {"a4", "x14"}, {"a5", "x15"}, {"a6", "x16"}, {"a7", "x17"}, {"s2", "x18"}, {"s3", "x19"}, {"s4", "x20"}, {"s5", "x21"}, {"s6", "x22"}, {"s7", "x23"}, {"s8", "x24"}, {"s9", "x25"}, {"s10", "x26"}, {"s11", "x27"}, {"t3", "x28"}, {"t4", "x29"}, {"t5", "x30"}, {"t6", "x31"}};
+    static const std::unordered_map<std::string, int> validRegisters = {
+        // x0 - zero register
+        {"zero", 0}, {"x0", 0},
+        
+        // x1 - return address
+        {"ra", 1}, {"x1", 1},
+        
+        // x2 - stack pointer
+        {"sp", 2}, {"x2", 2},
+        
+        // x3 - global pointer
+        {"gp", 3}, {"x3", 3},
+        
+        // x4 - thread pointer
+        {"tp", 4}, {"x4", 4},
+        
+        // x5-x7 - temporary registers
+        {"t0", 5}, {"x5", 5},
+        {"t1", 6}, {"x6", 6},
+        {"t2", 7}, {"x7", 7},
+        
+        // x8 - saved register/frame pointer
+        {"s0", 8}, {"fp", 8}, {"x8", 8},
+        
+        // x9 - saved register
+        {"s1", 9}, {"x9", 9},
+        
+        // x10-x17 - argument/return registers
+        {"a0", 10}, {"x10", 10},
+        {"a1", 11}, {"x11", 11},
+        {"a2", 12}, {"x12", 12},
+        {"a3", 13}, {"x13", 13},
+        {"a4", 14}, {"x14", 14},
+        {"a5", 15}, {"x15", 15},
+        {"a6", 16}, {"x16", 16},
+        {"a7", 17}, {"x17", 17},
+        
+        // x18-x27 - saved registers
+        {"s2", 18}, {"x18", 18},
+        {"s3", 19}, {"x19", 19},
+        {"s4", 20}, {"x20", 20},
+        {"s5", 21}, {"x21", 21},
+        {"s6", 22}, {"x22", 22},
+        {"s7", 23}, {"x23", 23},
+        {"s8", 24}, {"x24", 24},
+        {"s9", 25}, {"x25", 25},
+        {"s10", 26}, {"x26", 26},
+        {"s11", 27}, {"x27", 27},
+        
+        // x28-x31 - temporary registers
+        {"t3", 28}, {"x28", 28},
+        {"t4", 29}, {"x29", 29},
+        {"t5", 30}, {"x30", 30},
+        {"t6", 31}, {"x31", 31}
+    };
 
     struct InstructionEncoding
     {
-        std::unordered_map<std::string, std::string> func7Map;
-        std::unordered_map<std::string, std::string> func3Map;
-        std::unordered_map<std::string, std::string> opcodeMap;
+        std::unordered_map<std::string, uint32_t> func7Map;
+        std::unordered_map<std::string, uint32_t> func3Map;
+        std::unordered_map<std::string, uint32_t> opcodeMap;
     };
 
     struct RTypeInstructions
@@ -61,9 +114,9 @@ namespace riscv
         static const InstructionEncoding &getEncoding()
         {
             static const InstructionEncoding encoding = {
-                {{"add", "0000000"}, {"sub", "0100000"}, {"mul", "0000001"}, {"div", "0000001"}, {"rem", "0000001"}, {"and", "0000000"}, {"or", "0000000"}, {"xor", "0000000"}, {"sll", "0000000"}, {"slt", "0000000"}, {"sra", "0100000"}, {"srl", "0000000"}},
-                {{"add", "000"}, {"sub", "000"}, {"mul", "000"}, {"div", "100"}, {"rem", "110"}, {"and", "111"}, {"or", "110"}, {"xor", "100"}, {"sll", "001"}, {"slt", "010"}, {"sra", "101"}, {"srl", "101"}},
-                {{"add", "0110011"}, {"sub", "0110011"}, {"mul", "0110011"}, {"div", "0110011"}, {"rem", "0110011"}, {"and", "0110011"}, {"or", "0110011"}, {"xor", "0110011"}, {"sll", "0110011"}, {"slt", "0110011"}, {"sra", "0110011"}, {"srl", "0110011"}}};
+                {{"add", 0b0000000}, {"sub", 0b0100000}, {"mul", 0b0000001}, {"div", 0b0000001}, {"rem", 0b0000001}, {"and", 0b0000000}, {"or", 0b0000000}, {"xor", 0b0000000}, {"sll", 0b0000000}, {"slt", 0b0000000}, {"sra", 0b0100000}, {"srl", 0b0000000}},
+                {{"add", 0b000}, {"sub", 0b000}, {"mul", 0b000}, {"div", 0b100}, {"rem", 0b110}, {"and", 0b111}, {"or", 0b110}, {"xor", 0b100}, {"sll", 0b001}, {"slt", 0b010}, {"sra", 0b101}, {"srl", 0b101}},
+                {{"add", 0b0110011}, {"sub", 0b0110011}, {"mul", 0b0110011}, {"div", 0b0110011}, {"rem", 0b0110011}, {"and", 0b0110011}, {"or", 0b0110011}, {"xor", 0b0110011}, {"sll", 0b0110011}, {"slt", 0b0110011}, {"sra", 0b0110011}, {"srl", 0b0110011}}};
             return encoding;
         }
     };
@@ -73,9 +126,14 @@ namespace riscv
         static const InstructionEncoding &getEncoding()
         {
             static const InstructionEncoding encoding = {
-                {{"slli", "0000000"}, {"srli", "0000000"}, {"srai", "0100000"}},
-                {{"addi", "000"}, {"andi", "111"}, {"ori", "110"}, {"slti", "010"}, {"sltiu", "011"}, {"xori", "100"}, {"lb", "000"}, {"lh", "001"}, {"lw", "010"}, {"ld", "011"}, {"jalr", "000"}, {"slli", "001"}, {"srli", "101"}, {"srai", "101"}},
-                {{"addi", "0010011"}, {"andi", "0010011"}, {"ori", "0010011"}, {"slti", "0010011"}, {"sltiu", "0010011"}, {"xori", "0010011"}, {"lb", "0000011"}, {"lh", "0000011"}, {"lw", "0000011"}, {"ld", "0000011"}, {"jalr", "1100111"}, {"slli", "0010011"}, {"srli", "0010011"}, {"srai", "0010011"}}};
+                {{"slli", 0b0000000}, {"srli", 0b0000000}, {"srai", 0b0100000}},
+                {{"addi", 0b000}, {"andi", 0b111}, {"ori", 0b110}, {"slti", 0b010}, {"sltiu", 0b011}, 
+                 {"xori", 0b100}, {"lb", 0b000}, {"lh", 0b001}, {"lw", 0b010}, {"ld", 0b011}, 
+                 {"jalr", 0b000}, {"slli", 0b001}, {"srli", 0b101}, {"srai", 0b101}},
+                {{"addi", 0b0010011}, {"andi", 0b0010011}, {"ori", 0b0010011}, {"slti", 0b0010011}, 
+                 {"sltiu", 0b0010011}, {"xori", 0b0010011}, {"lb", 0b0000011}, {"lh", 0b0000011}, 
+                 {"lw", 0b0000011}, {"ld", 0b0000011}, {"jalr", 0b1100111}, {"slli", 0b0010011}, 
+                 {"srli", 0b0010011}, {"srai", 0b0010011}}};
             return encoding;
         }
     };
@@ -86,8 +144,8 @@ namespace riscv
         {
             static const InstructionEncoding encoding = {
                 {},
-                {{"sb", "000"}, {"sh", "001"}, {"sw", "010"}, {"sd", "011"}},
-                {{"sb", "0100011"}, {"sh", "0100011"}, {"sw", "0100011"}, {"sd", "0100011"}}};
+                {{"sb", 0b000}, {"sh", 0b001}, {"sw", 0b010}, {"sd", 0b011}},
+                {{"sb", 0b0100011}, {"sh", 0b0100011}, {"sw", 0b0100011}, {"sd", 0b0100011}}};
             return encoding;
         }
     };
@@ -98,8 +156,8 @@ namespace riscv
         {
             static const InstructionEncoding encoding = {
                 {},
-                {{"beq", "000"}, {"bne", "001"}, {"bge", "101"}, {"blt", "100"}, {"bgeu", "111"}, {"bltu", "110"}},
-                {{"beq", "1100011"}, {"bne", "1100011"}, {"bge", "1100011"}, {"blt", "1100011"}, {"bgeu", "1100011"}, {"bltu", "1100011"}}};
+                {{"beq", 0b000}, {"bne", 0b001}, {"bge", 0b101}, {"blt", 0b100}, {"bgeu", 0b111}, {"bltu", 0b110}},
+                {{"beq", 0b1100011}, {"bne", 0b1100011}, {"bge", 0b1100011}, {"blt", 0b1100011}, {"bgeu", 0b1100011}, {"bltu", 0b1100011}}};
             return encoding;
         }
     };
@@ -111,7 +169,7 @@ namespace riscv
             static const InstructionEncoding encoding = {
                 {},
                 {},
-                {{"auipc", "0010111"}, {"lui", "0110111"}}};
+                {{"lui", 0b0110111}, {"auipc", 0b0010111}}};
             return encoding;
         }
     };
@@ -123,7 +181,7 @@ namespace riscv
             static const InstructionEncoding encoding = {
                 {},
                 {},
-                {{"jal", "1101111"}}};
+                {{"jal", 0b1101111}}};
             return encoding;
         }
     };

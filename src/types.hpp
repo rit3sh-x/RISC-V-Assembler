@@ -47,33 +47,16 @@ namespace riscv
     };
 
     static const std::unordered_map<std::string, int> validRegisters = {
-        // x0 - zero register
         {"zero", 0}, {"x0", 0},
-        
-        // x1 - return address
         {"ra", 1}, {"x1", 1},
-        
-        // x2 - stack pointer
         {"sp", 2}, {"x2", 2},
-        
-        // x3 - global pointer
         {"gp", 3}, {"x3", 3},
-        
-        // x4 - thread pointer
         {"tp", 4}, {"x4", 4},
-        
-        // x5-x7 - temporary registers
         {"t0", 5}, {"x5", 5},
         {"t1", 6}, {"x6", 6},
         {"t2", 7}, {"x7", 7},
-        
-        // x8 - saved register/frame pointer
         {"s0", 8}, {"fp", 8}, {"x8", 8},
-        
-        // x9 - saved register
         {"s1", 9}, {"x9", 9},
-        
-        // x10-x17 - argument/return registers
         {"a0", 10}, {"x10", 10},
         {"a1", 11}, {"x11", 11},
         {"a2", 12}, {"x12", 12},
@@ -82,8 +65,6 @@ namespace riscv
         {"a5", 15}, {"x15", 15},
         {"a6", 16}, {"x16", 16},
         {"a7", 17}, {"x17", 17},
-        
-        // x18-x27 - saved registers
         {"s2", 18}, {"x18", 18},
         {"s3", 19}, {"x19", 19},
         {"s4", 20}, {"x20", 20},
@@ -94,8 +75,6 @@ namespace riscv
         {"s9", 25}, {"x25", 25},
         {"s10", 26}, {"x26", 26},
         {"s11", 27}, {"x27", 27},
-        
-        // x28-x31 - temporary registers
         {"t3", 28}, {"x28", 28},
         {"t4", 29}, {"x29", 29},
         {"t5", 30}, {"x30", 30},

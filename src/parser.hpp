@@ -35,15 +35,12 @@ public:
     bool parse();
     void printSymbolTable() const;
     void printParsedInstructions() const;
-
     const std::unordered_map<std::string, SymbolEntry> &getSymbolTable() const { return symbolTable; }
     const std::vector<ParsedInstruction> &getParsedInstructions() const { return parsedInstructions; }
     bool hasErrors() const { return errorCount > 0; }
     size_t getErrorCount() const { return errorCount; }
 
 private:
-    friend class Assembler;
-
     const std::vector<std::vector<Token>> &tokens;
     std::unordered_map<std::string, SymbolEntry> symbolTable;
     std::vector<ParsedInstruction> parsedInstructions;
@@ -63,6 +60,8 @@ private:
     std::vector<Token>::const_iterator findNextDirectiveOrOpcode(const std::vector<Token> &line, std::vector<Token>::const_iterator start) const;
     int32_t getRegisterNumber(const std::string& reg) const;
     int32_t parseImmediate(const std::string& imm) const;
+
+    friend class Assembler;
 };
 
 Parser::Parser(const std::vector<std::vector<Token>> &tokenizedLines) : tokens(tokenizedLines), errorCount(0), lastLabel("") {}
@@ -441,9 +440,11 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
     bool isImm = false;
     bool isBranch = false;
     bool isShift = false;
-    
-    // Determine instruction type and expected operands
-    if (opcode == "slli" || opcode == "srli" || opcode == "srai") {
+
+    const auto& iTypeEncoding = riscv::ITypeInstructions::getEncoding();
+    if (iTypeEncoding.opcodeMap.count(opcode) && 
+        (iTypeEncoding.func3Map.at(opcode) == 0b001 || 
+         (iTypeEncoding.func3Map.at(opcode) == 0b101 && iTypeEncoding.func7Map.count(opcode)))) {
         expectedOperands = 3;
         isImm = true;
         isShift = true;
@@ -476,14 +477,11 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
         isImm = true;
     }
 
-    // Process operands
     size_t i = 1;
     bool foundMemoryFormat = false;
     
     while (i < line.size()) {
         const Token& token = line[i];
-
-        // First operand validation for store instructions
         if (isStore && i == 1) {
             if (!Lexer::isRegister(token.value)) {
                 reportError("First operand of store instruction must be a register", line[0].lineNumber);
@@ -493,21 +491,17 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
             i++;
             continue;
         }
-        
-        // Handle memory format operands
+
         if (isMemoryOp && ((isStore && i == 2) || (!isStore && i == 2))) {
             std::string offset, reg;
             if (Lexer::isMemory(token.value, offset, reg)) {
                 foundMemoryFormat = true;
                 try {
-                    // Validate the register
                     int32_t regNum = getRegisterNumber(reg);
                     if (regNum < 0) {
                         reportError("Invalid register in memory operand: " + reg, line[0].lineNumber);
                         return false;
                     }
-                    
-                    // Validate the offset
                     int32_t imm = parseImmediate(offset);
                     if (imm < -2048 || imm > 2047) {
                         reportError("Memory offset out of range (-2048 to 2047): " + offset, line[0].lineNumber);
@@ -525,7 +519,6 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
             }
         }
 
-        // Handle regular operands
         switch (token.type) {
             case TokenType::REGISTER: {
                 int32_t regNum = getRegisterNumber(token.value);
@@ -538,25 +531,21 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
             }
             case TokenType::IMMEDIATE: {
                 try {
-                    // Handle different immediate formats based on instruction type
                     int32_t imm = parseImmediate(token.value);
                     
                     if (isMemoryOp && !foundMemoryFormat) {
-                        // Memory operations (load/store)
                         if (imm < -2048 || imm > 2047) {
                             reportError("Memory offset out of range (-2048 to 2047): " + token.value, line[0].lineNumber);
                             return false;
                         }
                     }
                     else if (isBranch) {
-                        // Branch instructions (12-bit signed, must be even)
                         if (imm < -4096 || imm > 4095 || (imm & 1)) {
                             reportError("Branch offset must be even and in range (-4096 to 4095): " + token.value, line[0].lineNumber);
                             return false;
                         }
                     }
                     else if (isImm) {
-                        // I-type instructions (12-bit signed)
                         if (imm < -2048 || imm > 2047) {
                             reportError("Immediate value out of range (-2048 to 2047): " + token.value, line[0].lineNumber);
                             return false;
@@ -564,7 +553,6 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                     }
                     operands.push_back(token.value);
                 } catch (const std::exception& e) {
-                    // Try to parse as register if it's a memory operation
                     if (isMemoryOp && !foundMemoryFormat && Lexer::isRegister(token.value)) {
                         operands.push_back(token.value);
                     } else {
@@ -578,8 +566,6 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                 if (isBranch || opcode == "jal" || opcode == "j") {
                     uint32_t labelAddress = resolveLabel(token.value);
                     if (labelAddress == static_cast<uint32_t>(-1)) return false;
-                    
-                    // Calculate relative offset for branches and jumps
                     int32_t offset = static_cast<int32_t>(labelAddress - currentAddress);
                     if (isBranch) {
                         if (offset < -4096 || offset > 4095 || (offset & 1)) {
@@ -587,7 +573,6 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                             return false;
                         }
                     } else {
-                        // JAL/J instructions (20-bit signed, must be even)
                         if (offset < -1048576 || offset > 1048575 || (offset & 1)) {
                             reportError("Jump target out of range or misaligned: " + token.value, line[0].lineNumber);
                             return false;
@@ -602,7 +587,6 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                 break;
             }
             case TokenType::UNKNOWN: {
-                // Try to resolve as label first
                 if (symbolTable.find(token.value) != symbolTable.end()) {
                     uint32_t labelAddress = resolveLabel(token.value);
                     if (labelAddress == static_cast<uint32_t>(-1)) return false;
@@ -621,7 +605,6 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                         operands.push_back(std::to_string(labelAddress));
                     }
                 } else {
-                    // Try to parse as register
                     if (Lexer::isRegister(token.value)) {
                         operands.push_back(token.value);
                     } else {
@@ -638,21 +621,16 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
         i++;
     }
 
-    // Special handling for memory operations
     if (isMemoryOp && !foundMemoryFormat && operands.size() == expectedOperands) {
-        // For non-combined format (e.g., lw rd, imm, rs1), verify the last operand is a valid register
         if (!Lexer::isRegister(operands.back())) {
             reportError("Invalid base register in memory operation: " + operands.back(), line[0].lineNumber);
             return false;
         }
     }
-
-    // Verify operand count
     if (operands.size() != expectedOperands) {
         reportError("Incorrect number of operands for '" + opcode + "' (expected " + std::to_string(expectedOperands) + ", got " + std::to_string(operands.size()) + ")", line[0].lineNumber);
         return false;
     }
-
     parsedInstructions.emplace_back(opcode, operands, currentAddress);
     return true;
 }
@@ -740,13 +718,10 @@ int32_t Parser::getRegisterNumber(const std::string& reg) const {
     cleanReg.erase(std::remove_if(cleanReg.begin(), cleanReg.end(), ::isspace), cleanReg.end());
     std::string lowerReg = cleanReg;
     std::transform(lowerReg.begin(), lowerReg.end(), lowerReg.begin(), ::tolower);
-
-    // Look up in the validRegisters map
     auto it = riscv::validRegisters.find(lowerReg);
     if (it != riscv::validRegisters.end()) {
         return it->second;
     }
-
     reportError("Invalid register name: " + reg);
     return -1;
 }
@@ -768,17 +743,13 @@ int32_t Parser::parseImmediate(const std::string& imm) const {
         if (cleanImm.length() > 2 && cleanImm[0] == '0') {
             char format = ::tolower(cleanImm[1]);
             if (format == 'x') {
-                // Hexadecimal format
                 value = std::stoul(cleanImm, nullptr, 16);
             } else if (format == 'b') {
-                // Binary format
                 value = std::stoul(cleanImm.substr(2), nullptr, 2);
             } else {
-                // Decimal format
                 value = std::stoul(cleanImm, nullptr, 10);
             }
         } else {
-            // Decimal format
             value = std::stoul(cleanImm, nullptr, 10);
         }
 

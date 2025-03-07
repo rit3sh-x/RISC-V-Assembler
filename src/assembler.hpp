@@ -48,10 +48,8 @@ private:
     std::string decodeInstruction(uint32_t instruction) const;
 
     OpcodeInfo getOpcodeInfo(const std::string& opcode) const;
-
     void processTextSegment(const std::vector<ParsedInstruction>& instructions);
     void processDataSegment(const std::unordered_map<std::string, SymbolEntry>& symbolTable);
-
     void formatInstruction(std::ofstream& outFile, uint32_t addr, uint32_t instruction) const;
 };
 
@@ -113,7 +111,6 @@ bool Assembler::assemble() {
     machineCode.clear();
     const auto& instructions = parser.getParsedInstructions();
     const auto& symbolTable = parser.getSymbolTable();
-
     try {
         processTextSegment(instructions);
         machineCode.push_back({TEXT_SEGMENT_START + instructions.size() * 4, 0xDEADBEEF});
@@ -123,7 +120,6 @@ bool Assembler::assemble() {
         reportError(std::string("Assembly failed: ") + e.what());
         return false;
     }
-
     return !hasErrors();
 }
 
@@ -136,30 +132,33 @@ void Assembler::processTextSegment(const std::vector<ParsedInstruction>& instruc
         try {
             if (riscv::RTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
                 machineInstruction = generateRType(inst.opcode, inst.operands);
+                machineCode.push_back({currentAddress, machineInstruction});
             }
             else if (riscv::ITypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
-                generateIType(inst.opcode, inst.operands, currentAddress);
+                if (!generateIType(inst.opcode, inst.operands, currentAddress)) {
+                    continue;
+                }
             }
             else if (riscv::STypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
                 machineInstruction = generateSType(inst.opcode, inst.operands);
+                machineCode.push_back({currentAddress, machineInstruction});
             }
             else if (riscv::SBTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
                 machineInstruction = generateSBType(inst.opcode, inst.operands, currentAddress);
+                machineCode.push_back({currentAddress, machineInstruction});
             }
             else if (riscv::UTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
-                generateUType(inst.opcode, inst.operands, currentAddress);
+                if (!generateUType(inst.opcode, inst.operands, currentAddress)) {
+                    continue;
+                }
             }
             else if (riscv::UJTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
                 machineInstruction = generateUJType(inst.opcode, inst.operands, currentAddress);
+                machineCode.push_back({currentAddress, machineInstruction});
             }
             else {
                 reportError("Unknown instruction type for opcode: " + inst.opcode);
                 continue;
-            }
-
-            if (!riscv::ITypeInstructions::getEncoding().opcodeMap.count(inst.opcode) &&
-                !riscv::UTypeInstructions::getEncoding().opcodeMap.count(inst.opcode)) {
-                machineCode.push_back({currentAddress, machineInstruction});
             }
             currentAddress += 4;
         }
@@ -213,8 +212,6 @@ uint32_t Assembler::generateRType(const std::string& opcode, const std::vector<s
     if (rd < 0 || rs1 < 0 || rs2 < 0) {
         throw std::runtime_error("Invalid register in R-type instruction");
     }
-
-    // Verify registers are in valid range
     if (rd > 31 || rs1 > 31 || rs2 > 31) {
         throw std::runtime_error("Register number out of range (0-31)");
     }
@@ -236,21 +233,16 @@ bool Assembler::generateIType(const std::string& opcode, const std::vector<std::
     int32_t rd = parser.getRegisterNumber(operands[0]);
     int32_t rs1;
     int32_t imm;
-
-    // Handle memory operations (load instructions)
     if (opcode == "lb" || opcode == "lh" || opcode == "lw" || opcode == "lbu" || opcode == "lhu") {
         std::string offset, baseReg;
         if (Lexer::isMemory(operands[1], offset, baseReg)) {
-            // Memory format: lw rd, offset(rs1)
             rs1 = parser.getRegisterNumber(baseReg);
             imm = parser.parseImmediate(offset);
         } else {
-            // Separated format: lw rd, imm, rs1
             imm = parser.parseImmediate(operands[1]);
             rs1 = parser.getRegisterNumber(operands[2]);
         }
     } else {
-        // Regular I-type instruction
         rs1 = parser.getRegisterNumber(operands[1]);
         imm = parser.parseImmediate(operands[2]);
     }
@@ -260,15 +252,13 @@ bool Assembler::generateIType(const std::string& opcode, const std::vector<std::
         return false;
     }
 
-    // For shift instructions, only use lower 5 bits
     if (opcode == "slli" || opcode == "srli" || opcode == "srai") {
         if (imm < 0 || imm > 31) {
             reportError("Shift amount must be between 0 and 31");
             return false;
         }
-        imm &= 0x1F;  // Only use lower 5 bits for shift amount
+        imm &= 0x1F;
     } else {
-        // Regular I-type immediate range check
         if (imm < -2048 || imm > 2047) {
             reportError("Immediate value out of range for I-type instruction (-2048 to 2047)");
             return false;
@@ -301,9 +291,7 @@ uint32_t Assembler::generateSType(const std::string& opcode, const std::vector<s
     int32_t rs1;
     int32_t imm;
     
-    // Handle both combined and separated formats
     if (operands.size() == 2) {
-        // Combined format: sw rs2, offset(rs1)
         std::string offset, reg;
         if (!Lexer::isMemory(operands[1], offset, reg)) {
             throw std::runtime_error("Invalid memory operand format");
@@ -311,7 +299,6 @@ uint32_t Assembler::generateSType(const std::string& opcode, const std::vector<s
         imm = parseImmediate(offset);
         rs1 = getRegisterNumber(reg);
     } else if (operands.size() == 3) {
-        // Separated format: sw rs2, offset, rs1
         imm = parseImmediate(operands[1]);
         rs1 = getRegisterNumber(operands[2]);
     } else {
@@ -321,13 +308,9 @@ uint32_t Assembler::generateSType(const std::string& opcode, const std::vector<s
     if (rs1 < 0 || rs2 < 0) {
         throw std::runtime_error("Invalid register in S-type instruction");
     }
-
-    // Verify registers are in valid range
     if (rs1 > 31 || rs2 > 31) {
         throw std::runtime_error("Register number out of range (0-31)");
     }
-
-    // Verify immediate value range for store instructions
     if (imm < -2048 || imm > 2047) {
         throw std::runtime_error("Immediate value out of range for S-type instruction (-2048 to 2047)");
     }
@@ -349,16 +332,13 @@ uint32_t Assembler::generateSBType(const std::string& opcode, const std::vector<
     int32_t rs1 = getRegisterNumber(operands[0]);
     int32_t rs2 = getRegisterNumber(operands[1]);
     int32_t offset;
-
-    // Handle label or immediate for branch target
+    
     try {
         if (operands[2].find("0x") == 0 || operands[2].find("0b") == 0 || 
             std::all_of(operands[2].begin(), operands[2].end(), ::isdigit) ||
             operands[2][0] == '-') {
-            // Direct immediate value
             offset = parseImmediate(operands[2]);
         } else {
-            // Label - calculate relative offset
             uint32_t targetAddress = std::stoul(operands[2], nullptr, 0);
             offset = calculateRelativeOffset(currentAddress, targetAddress);
         }
@@ -369,13 +349,9 @@ uint32_t Assembler::generateSBType(const std::string& opcode, const std::vector<
     if (rs1 < 0 || rs2 < 0) {
         throw std::runtime_error("Invalid register in SB-type instruction");
     }
-
-    // Verify registers are in valid range
     if (rs1 > 31 || rs2 > 31) {
         throw std::runtime_error("Register number out of range (0-31)");
     }
-
-    // Verify branch offset is valid and aligned
     if (offset < -4096 || offset > 4095) {
         throw std::runtime_error("Branch offset out of range (-4096 to 4095)");
     }
@@ -383,7 +359,6 @@ uint32_t Assembler::generateSBType(const std::string& opcode, const std::vector<
         throw std::runtime_error("Branch offset must be even");
     }
 
-    // Extract and position the immediate bits according to SB-type format
     uint32_t imm12 = (offset >> 12) & 0x1;
     uint32_t imm11 = (offset >> 11) & 0x1;
     uint32_t imm10_5 = (offset >> 5) & 0x3F;
@@ -433,8 +408,6 @@ uint32_t Assembler::generateUJType(const std::string& opcode, const std::vector<
     if (rd < 0) {
         throw std::runtime_error("Invalid destination register in UJ-type instruction");
     }
-
-    // Verify register is in valid range
     if (rd > 31) {
         throw std::runtime_error("Register number out of range (0-31)");
     }
@@ -444,18 +417,14 @@ uint32_t Assembler::generateUJType(const std::string& opcode, const std::vector<
         if (operands[1].find("0x") == 0 || operands[1].find("0b") == 0 || 
             std::all_of(operands[1].begin(), operands[1].end(), ::isdigit) ||
             operands[1][0] == '-') {
-            // Direct immediate value
             offset = parseImmediate(operands[1]);
         } else {
-            // Label - calculate relative offset
             uint32_t targetAddress = std::stoul(operands[1], nullptr, 0);
             offset = calculateRelativeOffset(currentAddress, targetAddress);
         }
     } catch (const std::exception& e) {
         throw std::runtime_error("Invalid jump target: " + operands[1]);
     }
-
-    // Verify jump offset is valid and aligned
     if (offset < -1048576 || offset > 1048575) {
         throw std::runtime_error("Jump offset out of range (-1M to +1M)");
     }
@@ -463,7 +432,6 @@ uint32_t Assembler::generateUJType(const std::string& opcode, const std::vector<
         throw std::runtime_error("Jump offset must be even");
     }
 
-    // Extract and position the immediate bits according to UJ-type format
     uint32_t imm20 = (offset >> 20) & 0x1;
     uint32_t imm10_1 = (offset >> 1) & 0x3FF;
     uint32_t imm11 = (offset >> 11) & 0x1;
@@ -485,18 +453,13 @@ int32_t Assembler::getRegisterNumber(const std::string& reg) const {
     std::string cleanReg = reg;
     cleanReg.erase(std::remove_if(cleanReg.begin(), cleanReg.end(), ::isspace), cleanReg.end());
     std::transform(cleanReg.begin(), cleanReg.end(), cleanReg.begin(), ::tolower);
-
-    // Look up in the validRegisters map
     auto it = riscv::validRegisters.find(cleanReg);
     if (it != riscv::validRegisters.end()) {
         return it->second;
     }
-
-    // Special handling for zero register
     if (cleanReg == "zero" || cleanReg == "x0") {
         return 0;
     }
-
     reportError("Invalid register name: " + reg);
     return -1;
 }
@@ -545,11 +508,11 @@ bool Assembler::writeToFile(const std::string& filename) {
         for (const auto& pair : sortedCode) {
             if (pair.first >= DATA_SEGMENT_START && pair.first < HEAP_SEGMENT_START) {
                 hasDataSegment = true;
-                outFile << "0x" << std::setw(8) << pair.first << " 0x" << std::setw(8) << pair.second << "\n";
+                outFile << "0x" << std::setw(8) << pair.first << " 0x" << std::setw(8) << pair.second;
+                outFile << "\n";
             }
         }
         if (hasDataSegment) outFile << "\n";
-
         outFile << "################    TEXT    #################\n";
         for (const auto& pair : sortedCode) {
             if (pair.first < DATA_SEGMENT_START) {
@@ -602,7 +565,6 @@ std::string Assembler::decodeInstruction(uint32_t instruction) const {
             else if (funct3 == 0b110) ss << "ori";
             else if (funct3 == 0b111) ss << "andi";
             if (funct3 == 0b001 || funct3 == 0b101) {
-                // For shift instructions, only use bottom 5 bits
                 ss << " x" << rd << ",x" << rs1 << "," << (imm & 0x1F);
             } else {
                 ss << " x" << rd << ",x" << rs1 << "," << imm;
@@ -725,20 +687,15 @@ int32_t Assembler::parseImmediate(const std::string& imm) const {
         if (cleanImm.length() > 2 && cleanImm[0] == '0') {
             char format = ::tolower(cleanImm[1]);
             if (format == 'x') {
-                // Hexadecimal format
                 value = std::stoul(cleanImm, nullptr, 16);
             } else if (format == 'b') {
-                // Binary format
                 value = std::stoul(cleanImm.substr(2), nullptr, 2);
             } else {
-                // Decimal format
                 value = std::stoul(cleanImm, nullptr, 10);
             }
         } else {
-            // Decimal format
             value = std::stoul(cleanImm, nullptr, 10);
         }
-
         return isNegative ? -static_cast<int32_t>(value) : static_cast<int32_t>(value);
     } catch (const std::exception& e) {
         throw std::runtime_error("Invalid immediate value '" + imm + "': " + e.what());

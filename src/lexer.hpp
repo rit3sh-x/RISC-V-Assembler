@@ -21,16 +21,16 @@ struct Token {
 class Lexer {
 public:
     static std::vector<std::vector<Token>> Tokenizer(const std::string& filename);
+
+private:
     static std::string getTokenTypeName(TokenType type);
+    static std::string trim(const std::string& str);
     static bool isImmediate(const std::string& token);
     static bool isDirective(const std::string& token);
     static bool isLabel(const std::string& token);
-    static bool isMemory(const std::string& token, std::string& offset, std::string& reg);
-    static std::string trim(const std::string& str);
-
-private:
     static std::vector<Token> tokenizeLine(const std::string& line, int lineNumber);
     static bool isRegister(const std::string& token);
+    static bool isMemory(const std::string& token, std::string& offset, std::string& reg);
     static std::string tokenTypeToString(TokenType type);
     static Token classifyToken(const std::string& token, int lineNumber);
 
@@ -66,8 +66,6 @@ std::string Lexer::getTokenTypeName(TokenType type) {
 bool Lexer::isRegister(const std::string& token) {
     std::string lowerToken = token;
     std::transform(lowerToken.begin(), lowerToken.end(), lowerToken.begin(), ::tolower);
-    
-    // Simply check if the register name exists in the validRegisters map
     return validRegisters.find(lowerToken) != validRegisters.end();
 }
 
@@ -77,14 +75,8 @@ bool Lexer::isImmediate(const std::string& token) {
     size_t pos = 0;
     bool isHex = false;
     bool isBinary = false;
-    
-    // Handle negative numbers
     if (token[0] == '-' || token[0] == '+') pos = 1;
-    
-    // Empty after sign
     if (pos >= token.length()) return false;
-    
-    // Handle hex numbers (0x or 0X prefix)
     if (token.length() > pos + 2 && token[pos] == '0') {
         char format = ::tolower(token[pos + 1]);
         if (format == 'x') {
@@ -95,21 +87,14 @@ bool Lexer::isImmediate(const std::string& token) {
             pos += 2;
         }
     }
-    
-    // Empty after prefix
+
     if (pos >= token.length()) return false;
-    
-    // For hex numbers, verify all remaining characters are valid hex digits
     if (isHex) {
         return std::all_of(token.begin() + pos, token.end(), ::isxdigit);
     }
-    
-    // For binary numbers, verify all remaining characters are 0 or 1
     if (isBinary) {
         return std::all_of(token.begin() + pos, token.end(), [](char c) { return c == '0' || c == '1'; });
     }
-    
-    // For decimal numbers, verify all remaining characters are digits
     return std::all_of(token.begin() + pos, token.end(), ::isdigit);
 }
 
@@ -126,51 +111,35 @@ bool Lexer::isLabel(const std::string& token) {
 bool Lexer::isMemory(const std::string& token, std::string& offset, std::string& reg) {
     size_t open = token.find('(');
     size_t close = token.find(')');
-    
-    // Check if we have both parentheses and they're in the right order
     if (open == std::string::npos || close == std::string::npos || close <= open) {
         return false;
     }
-    
-    // Extract the offset and register parts
     offset = trim(token.substr(0, open));
     reg = trim(token.substr(open + 1, close - open - 1));
-    
-    // Handle empty offset case (treat as 0)
     if (offset.empty()) {
         offset = "0";
     }
-    
-    // Verify that the register part is valid
     if (!isRegister(reg)) {
         return false;
     }
-    
-    // Verify that the offset is a valid immediate value
     if (!offset.empty() && !isImmediate(offset)) {
         return false;
     }
-    
-    // Verify nothing after the closing parenthesis
     if (close + 1 < token.length()) {
         std::string remainder = trim(token.substr(close + 1));
         if (!remainder.empty()) {
             return false;
         }
     }
-    
     return true;
 }
 
 Token Lexer::classifyToken(const std::string& token, int lineNumber) {
     std::string trimmed = trim(token);
     if (trimmed.empty()) return {TokenType::UNKNOWN, "", lineNumber};
-
-    // First check if it's a register to avoid misclassifying register names as immediates
     if (isRegister(trimmed)) {
         return {TokenType::REGISTER, trimmed, lineNumber};
     }
-
     if (opcodes.count(trimmed)) {
         return {TokenType::OPCODE, trimmed, lineNumber};
     }
@@ -206,7 +175,6 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
             if (!token.empty()) {
                 std::string offset, reg;
                 if (isMemory(token, offset, reg)) {
-                    // For memory operations, ensure proper handling of offsets
                     if (offset.empty()) offset = "0";
                     tokens.push_back({TokenType::IMMEDIATE, offset, lineNumber});
                     tokens.push_back({TokenType::REGISTER, reg, lineNumber});

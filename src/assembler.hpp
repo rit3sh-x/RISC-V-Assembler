@@ -241,9 +241,37 @@ uint32_t Assembler::generateIType(const std::string& opcode, const std::vector<s
 uint32_t Assembler::generateSType(const std::string& opcode, const std::vector<std::string>& operands) {
     auto opcodeInfo = getOpcodeInfo(opcode);
     
+    // For store instructions, format is: sw rs2, imm(rs1)
+    // operands[0] = rs2 (source register)
+    // operands[1] = immediate offset
+    // operands[2] = rs1 (base register)
+    
     int32_t rs2 = getRegisterNumber(operands[0]);
-    int32_t rs1 = getRegisterNumber(operands[2]);
-    int32_t imm = parseImmediate(operands[1]);
+    int32_t rs1;
+    int32_t imm;
+    
+    // Handle the case where immediate and base register are combined like "0(x1)"
+    if (operands.size() == 2 && operands[1].find('(') != std::string::npos) {
+        std::string combined = operands[1];
+        size_t openParen = combined.find('(');
+        size_t closeParen = combined.find(')');
+        
+        if (openParen != std::string::npos && closeParen != std::string::npos) {
+            std::string immStr = combined.substr(0, openParen);
+            std::string regStr = combined.substr(openParen + 1, closeParen - openParen - 1);
+            
+            imm = parseImmediate(immStr);
+            rs1 = getRegisterNumber(regStr);
+        } else {
+            throw std::runtime_error("Invalid memory operand format");
+        }
+    } else if (operands.size() == 3) {
+        // Handle separate immediate and register
+        imm = parseImmediate(operands[1]);
+        rs1 = getRegisterNumber(operands[2]);
+    } else {
+        throw std::runtime_error("Invalid number of operands for S-type instruction");
+    }
 
     if (rs1 < 0 || rs2 < 0) {
         throw std::runtime_error("Invalid register in S-type instruction");
@@ -309,15 +337,11 @@ uint32_t Assembler::generateUType(const std::string& opcode, const std::vector<s
 
     try {
         int32_t imm = parseImmediate(operands[1]);
-        
-        // For lui/auipc, handle the immediate value appropriately
         if (opcode == "lui" || opcode == "auipc") {
-            // If the immediate is a full 32-bit value
             if ((imm & 0xFFF) != 0) {
                 imm = imm >> 12;
             }
             
-            // Validate the range after shifting
             if (imm < 0 || imm > 0xFFFFF) {
                 throw std::runtime_error("Immediate value out of range for U-type instruction (must be between 0 and 0xFFFFF)");
             }
@@ -364,7 +388,6 @@ int32_t Assembler::getRegisterNumber(const std::string& reg) const {
         return -1;
     }
 
-    // Remove any whitespace
     std::string cleanReg = reg;
     cleanReg.erase(std::remove_if(cleanReg.begin(), cleanReg.end(), ::isspace), cleanReg.end());
 
@@ -394,7 +417,6 @@ int32_t Assembler::getRegisterNumber(const std::string& reg) const {
             return std::distance(riscv::validRegisters.begin(), riscv::validRegisters.find(cleanReg));
         }
     } catch (const std::exception& e) {
-        // Log the error but return -1 to maintain the function's contract
         reportError("Error parsing register '" + reg + "': " + e.what());
     }
     
@@ -403,7 +425,6 @@ int32_t Assembler::getRegisterNumber(const std::string& reg) const {
 
 int32_t Assembler::parseImmediate(const std::string& imm) const {
     try {
-        // Remove any whitespace
         std::string cleanImm = imm;
         cleanImm.erase(std::remove_if(cleanImm.begin(), cleanImm.end(), ::isspace), cleanImm.end());
         
@@ -411,19 +432,16 @@ int32_t Assembler::parseImmediate(const std::string& imm) const {
             throw std::runtime_error("Empty immediate value");
         }
 
-        // Handle negative numbers
         bool isNegative = cleanImm[0] == '-';
         if (isNegative) {
             cleanImm = cleanImm.substr(1);
         }
 
-        // Handle hexadecimal values (both with and without 0x prefix)
         if (cleanImm.find("0x") == 0 || cleanImm.find("0X") == 0) {
             uint32_t value = std::stoul(cleanImm, nullptr, 16);
             return isNegative ? -static_cast<int32_t>(value) : static_cast<int32_t>(value);
         }
 
-        // Check if it's a hex value without 0x prefix
         bool isHex = false;
         for (char c : cleanImm) {
             if ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
@@ -437,14 +455,12 @@ int32_t Assembler::parseImmediate(const std::string& imm) const {
             return isNegative ? -static_cast<int32_t>(value) : static_cast<int32_t>(value);
         }
 
-        // Validate decimal string
         for (char c : cleanImm) {
             if (!std::isdigit(c)) {
                 throw std::runtime_error("Invalid character in decimal immediate: " + cleanImm);
             }
         }
 
-        // Handle decimal values
         int32_t value = std::stol(cleanImm, nullptr, 10);
         return isNegative ? -value : value;
     } catch (const std::exception& e) {
@@ -466,7 +482,6 @@ bool Assembler::writeToFile(const std::string& filename) {
         outFile << std::hex << std::uppercase;
         outFile.fill('0');
 
-        // Validate segment boundaries with more detailed error messages
         for (const auto& pair : sortedCode) {
             if (pair.first < TEXT_SEGMENT_START) {
                 std::stringstream ss;
@@ -475,9 +490,7 @@ bool Assembler::writeToFile(const std::string& filename) {
                 throw std::runtime_error(ss.str());
             }
             
-            // Only validate text and data segments
             if (pair.first < DATA_SEGMENT_START) {
-                // Text segment validation
                 if (pair.first >= DATA_SEGMENT_START) {
                     std::stringstream ss;
                     ss << std::hex << "Invalid text segment address (0x" << pair.first 
@@ -485,7 +498,6 @@ bool Assembler::writeToFile(const std::string& filename) {
                     throw std::runtime_error(ss.str());
                 }
             } else if (pair.first >= DATA_SEGMENT_START && pair.first < HEAP_SEGMENT_START) {
-                // Data segment validation
                 if (pair.first >= HEAP_SEGMENT_START) {
                     std::stringstream ss;
                     ss << std::hex << "Invalid data segment address (0x" << pair.first 
@@ -495,7 +507,6 @@ bool Assembler::writeToFile(const std::string& filename) {
             }
         }
 
-        // Write data segment
         outFile << "################    DATA    #################\n";
         bool hasDataSegment = false;
         for (const auto& pair : sortedCode) {
@@ -506,7 +517,6 @@ bool Assembler::writeToFile(const std::string& filename) {
         }
         if (hasDataSegment) outFile << "\n";
 
-        // Write text segment
         outFile << "################    TEXT    #################\n";
         for (const auto& pair : sortedCode) {
             if (pair.first < DATA_SEGMENT_START) {
@@ -531,7 +541,6 @@ std::string Assembler::decodeInstruction(uint32_t instruction) const {
     
     std::stringstream ss;
 
-    // R-type
     if (opcode == 0b0110011) {
         if (funct3 == 0b000 && funct7 == 0b0000000) ss << "add";
         else if (funct3 == 0b000 && funct7 == 0b0100000) ss << "sub";
@@ -545,7 +554,6 @@ std::string Assembler::decodeInstruction(uint32_t instruction) const {
         else if (funct3 == 0b111 && funct7 == 0b0000000) ss << "and";
         ss << " x" << rd << ",x" << rs1 << ",x" << rs2;
     }
-    // I-type
     else if (opcode == 0b0010011 || opcode == 0b0000011) {
         int32_t imm = (instruction >> 20);
         if (opcode == 0b0010011) {
@@ -565,7 +573,6 @@ std::string Assembler::decodeInstruction(uint32_t instruction) const {
             ss << " x" << rd << "," << imm << "(x" << rs1 << ")";
         }
     }
-    // S-type
     else if (opcode == 0b0100011) {
         uint32_t imm11_5 = (instruction >> 25) & 0x7F;
         uint32_t imm4_0 = (instruction >> 7) & 0x1F;
@@ -575,7 +582,6 @@ std::string Assembler::decodeInstruction(uint32_t instruction) const {
         else if (funct3 == 0b010) ss << "sw";
         ss << " x" << rs2 << "," << imm << "(x" << rs1 << ")";
     }
-    // SB-type
     else if (opcode == 0b1100011) {
         uint32_t imm12 = (instruction >> 31) & 0x1;
         uint32_t imm11 = (instruction >> 7) & 0x1;
@@ -590,14 +596,12 @@ std::string Assembler::decodeInstruction(uint32_t instruction) const {
         else if (funct3 == 0b111) ss << "bgeu";
         ss << " x" << rs1 << ",x" << rs2 << "," << imm;
     }
-    // U-type
     else if (opcode == 0b0110111 || opcode == 0b0010111) {
         int32_t imm = (instruction & 0xFFFFF000);
         if (opcode == 0b0110111) ss << "lui";
         else ss << "auipc";
         ss << " x" << rd << "," << (imm >> 12);
     }
-    // UJ-type
     else if (opcode == 0b1101111) {
         uint32_t imm20 = (instruction >> 31) & 0x1;
         uint32_t imm10_1 = (instruction >> 21) & 0x3FF;
@@ -658,8 +662,6 @@ void Assembler::reportError(const std::string& message) const {
 }
 
 uint32_t Assembler::calculateRelativeOffset(uint32_t currentAddress, uint32_t targetAddress) const {
-    // Calculate PC-relative offset in bytes
-    // For branches and jumps, PC is the address of the instruction
     int32_t offset = static_cast<int32_t>(targetAddress - currentAddress);
     return offset;
 }

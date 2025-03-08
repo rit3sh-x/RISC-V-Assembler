@@ -1,20 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect } from 'react';
 import MonacoEditor from '@monaco-editor/react';
 import { editor } from 'monaco-editor';
+import { Play, FileUp } from 'lucide-react';
 
-const Editor = () => {
-  const [code, setCode] = useState<string>(`# Write your RISC-V code here
-# Example:
-addi x1, x0, 10  # Set x1 to 10
-addi x2, x0, 0x14  # Set x2 to 20 (hex)
-add x4, x1, x2   # x4 = x1 + x2
-`);
+interface EditorProps {
+  text: string;
+  setText: (text: string) => void;
+  activeTab: "editor" | "simulator";
+  setActiveTab: (tab: "editor" | "simulator") => void;
+}
+
+const Editor = ({ text, setText, activeTab, setActiveTab }: EditorProps) => {
+
+  useEffect(() => {
+    const savedCode = localStorage.getItem('riscvMachineCode');
+    if (savedCode) {
+      setText(savedCode);
+    }
+  }, []);
 
   const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
-    console.log('Editor mounted, registering RISC-V assembly language');
-
     monaco.languages.register({ id: 'riscv-assembly' });
     monaco.languages.setMonarchTokensProvider('riscv-assembly', {
       tokenizer: {
@@ -23,7 +30,6 @@ add x4, x1, x2   # x4 = x1 + x2
           [/\b(x(?:[0-9]|[12]\d|3[01])|zero|ra|sp|gp|tp|t[0-6]|s[0-1]|a[0-7]|s[2-9]|s1[0-1])\b/, 'variable'],
           [/\b0x[0-9a-fA-F]+\b/, 'number.hex'],
           [/\b-?\d+\b/, 'number'],
-          [/#.*/, 'comment'],
           [/^[a-zA-Z_]\w*:/, 'type.identifier'],
         ],
       },
@@ -37,7 +43,6 @@ add x4, x1, x2   # x4 = x1 + x2
         { token: 'variable', foreground: '008800' },
         { token: 'number', foreground: '666633' },
         { token: 'number.hex', foreground: 'FF8C00' },
-        { token: 'comment', foreground: '808080' },
         { token: 'type.identifier', foreground: 'FF6600', fontStyle: 'bold' },
       ],
       colors: {
@@ -47,23 +52,68 @@ add x4, x1, x2   # x4 = x1 + x2
     });
 
     editor.updateOptions({ theme: 'riscv-theme' });
-    console.log('Theme and language configured');
   };
 
   const handleEditorChange = (value: string | undefined) => {
     if (value !== undefined) {
-      setCode(value);
+      setText(value);
+      localStorage.setItem('riscvMachineCode', value);
+    }
+  };
+
+  const handleCompile = () => {
+    const machineCode = text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line)
+      .join('\n');
+    setActiveTab('simulator');
+    setText(machineCode);
+    localStorage.setItem('riscvMachineCode', machineCode);
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        setText(content);
+        localStorage.setItem('riscvMachineCode', content);
+      };
+      reader.readAsText(file);
     }
   };
 
   return (
     <div className="flex flex-col h-full p-4">
+      <div className="flex justify-start gap-2 mb-4">
+        {/* Upload Button */}
+        <label className="flex items-center px-4 py-2 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 transition-colors">
+          <FileUp className="w-5 h-5 mr-2" />
+          Upload Code
+          <input
+            type="file"
+            accept=".s,.asm,.txt"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+        </label>
+        <button
+          onClick={handleCompile}
+          className="flex items-center px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+        >
+          <Play className="w-5 h-5 mr-2" />
+          Compile
+        </button>
+      </div>
+
       <div className="flex-grow rounded-2xl shadow-lg overflow-hidden border border-gray-300">
         <MonacoEditor
           height="100%"
-          language={'riscv-assembly'}
+          language="riscv-assembly"
           theme="riscv-theme"
-          value={code}
+          value={text}
           onChange={handleEditorChange}
           onMount={handleEditorDidMount}
           options={{

@@ -12,8 +12,17 @@ body {
   }
 }
 
-html{
+*{
   overflow-x: clip;
+}
+
+*{
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db #f9fafb;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 @layer base {

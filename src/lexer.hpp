@@ -66,7 +66,19 @@ std::string Lexer::getTokenTypeName(TokenType type) {
 bool Lexer::isRegister(const std::string& token) {
     std::string lowerToken = token;
     std::transform(lowerToken.begin(), lowerToken.end(), lowerToken.begin(), ::tolower);
-    return validRegisters.find(lowerToken) != validRegisters.end();
+    if (validRegisters.find(lowerToken) != validRegisters.end()) {
+        return true;
+    }
+    if (lowerToken[0] == 'x' && lowerToken.length() > 1) {
+        try {
+            int num = std::stoi(lowerToken.substr(1));
+            return num >= 0 && num <= 31;
+        } catch (...) {
+            return false;
+        }
+    }
+    
+    return false;
 }
 
 bool Lexer::isImmediate(const std::string& token) {

@@ -210,14 +210,14 @@ void Parser::handleDirective(const std::vector<Token> &line)
             reportError("Invalid or missing string literal for " + directive + " directive", line[0].lineNumber);
             return;
         }
-
         entry.stringValue = line[tokenIndex].value;
         entry.isString = true;
-        uint32_t stringSize = entry.stringValue.length() + ((directive == ".ascii") ? 0 : 1);
+        uint32_t stringSize = entry.stringValue.length();
+        bool addNullTerminator = (directive == ".asciz" || directive == ".asciiz");
         uint32_t originalAddress = currentAddress;
-        currentAddress += stringSize;
-
-        currentAddress = (currentAddress + 3) & ~3;
+        uint32_t wordsNeeded = (stringSize + (addNullTerminator ? 1 : 0) + 3) / 4;
+        uint32_t bytesNeeded = wordsNeeded * 4;
+        currentAddress += bytesNeeded;
         entry.address = originalAddress;
     }
     else
@@ -440,6 +440,9 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
     bool isImm = false;
     bool isBranch = false;
     bool isShift = false;
+    bool isUType = false;
+    bool isUJType = false;
+    bool isDoubleWord = false;
 
     const auto& iTypeEncoding = riscv::ITypeInstructions::getEncoding();
     if (iTypeEncoding.opcodeMap.count(opcode) && 
@@ -455,14 +458,20 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
     else if (riscv::ITypeInstructions::getEncoding().opcodeMap.count(opcode)) {
         expectedOperands = 3;
         isImm = true;
-        if (opcode == "lb" || opcode == "lh" || opcode == "lw" || opcode == "lbu" || opcode == "lhu") {
+        if (opcode == "lb" || opcode == "lh" || opcode == "lw" || opcode == "lbu" || opcode == "lhu" || opcode == "ld") {
             isMemoryOp = true;
+            if (opcode == "ld") {
+                isDoubleWord = true;
+            }
         }
     }
     else if (riscv::STypeInstructions::getEncoding().opcodeMap.count(opcode)) {
         expectedOperands = 3;
         isMemoryOp = true;
         isStore = true;
+        if (opcode == "sd") {
+            isDoubleWord = true;
+        }
     }
     else if (riscv::SBTypeInstructions::getEncoding().opcodeMap.count(opcode)) {
         expectedOperands = 3;
@@ -471,10 +480,12 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
     else if (riscv::UTypeInstructions::getEncoding().opcodeMap.count(opcode)) {
         expectedOperands = 2;
         isImm = true;
+        isUType = true;
     }
     else if (riscv::UJTypeInstructions::getEncoding().opcodeMap.count(opcode)) {
         expectedOperands = 2;
         isImm = true;
+        isUJType = true;
     }
 
     size_t i = 1;
@@ -545,6 +556,18 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                             return false;
                         }
                     }
+                    else if (isUType) {
+                        if (imm < 0 || imm > 0xFFFFF) {
+                            reportError("Immediate value out of range for U-type instruction (0 to 0xFFFFF): " + token.value, line[0].lineNumber);
+                            return false;
+                        }
+                    }
+                    else if (isUJType) {
+                        if (imm < -524288 || imm > 524287 || (imm & 1)) {
+                            reportError("Jump immediate must be even and in range (-524288 to 524287): " + token.value, line[0].lineNumber);
+                            return false;
+                        }
+                    }
                     else if (isImm) {
                         if (imm < -2048 || imm > 2047) {
                             reportError("Immediate value out of range (-2048 to 2047): " + token.value, line[0].lineNumber);
@@ -563,7 +586,7 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                 break;
             }
             case TokenType::LABEL: {
-                if (isBranch || opcode == "jal" || opcode == "j") {
+                if (isBranch || isUJType || opcode == "j") {
                     uint32_t labelAddress = resolveLabel(token.value);
                     if (labelAddress == static_cast<uint32_t>(-1)) return false;
                     int32_t offset = static_cast<int32_t>(labelAddress - currentAddress);
@@ -572,7 +595,7 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                             reportError("Branch target out of range or misaligned: " + token.value, line[0].lineNumber);
                             return false;
                         }
-                    } else {
+                    } else if (isUJType || opcode == "j") {
                         if (offset < -1048576 || offset > 1048575 || (offset & 1)) {
                             reportError("Jump target out of range or misaligned: " + token.value, line[0].lineNumber);
                             return false;
@@ -591,12 +614,12 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                     uint32_t labelAddress = resolveLabel(token.value);
                     if (labelAddress == static_cast<uint32_t>(-1)) return false;
                     
-                    if (isBranch || opcode == "jal" || opcode == "j") {
+                    if (isBranch || isUJType || opcode == "j") {
                         int32_t offset = static_cast<int32_t>(labelAddress - currentAddress);
                         if (isBranch && (offset < -4096 || offset > 4095 || (offset & 1))) {
                             reportError("Branch target out of range or misaligned: " + token.value, line[0].lineNumber);
                             return false;
-                        } else if (!isBranch && (offset < -1048576 || offset > 1048575 || (offset & 1))) {
+                        } else if ((isUJType || opcode == "j") && (offset < -1048576 || offset > 1048575 || (offset & 1))) {
                             reportError("Jump target out of range or misaligned: " + token.value, line[0].lineNumber);
                             return false;
                         }
@@ -722,6 +745,17 @@ int32_t Parser::getRegisterNumber(const std::string& reg) const {
     if (it != riscv::validRegisters.end()) {
         return it->second;
     }
+    if (lowerReg[0] == 'x' && lowerReg.length() > 1) {
+        try {
+            int num = std::stoi(lowerReg.substr(1));
+            if (num >= 0 && num <= 31) {
+                return num;
+            }
+        } catch (...) {
+            reportError("Invalid register name: " + reg);
+        }
+    }
+    
     reportError("Invalid register name: " + reg);
     return -1;
 }

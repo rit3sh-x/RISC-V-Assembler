@@ -51,6 +51,14 @@ private:
     void processTextSegment(const std::vector<ParsedInstruction>& instructions);
     void processDataSegment(const std::unordered_map<std::string, SymbolEntry>& symbolTable);
     void formatInstruction(std::ofstream& outFile, uint32_t addr, uint32_t instruction) const;
+
+    std::string formatSignedImmediate(int32_t value, int bitWidth) const {
+        std::string binStr = std::bitset<32>(value & ((1LL << bitWidth) - 1)).to_string().substr(32 - bitWidth);
+        std::stringstream hexStream;
+        hexStream << std::hex << (value & ((1LL << bitWidth) - 1));
+        std::string hexStr = "0x" + hexStream.str();
+        return "0b" + binStr + " (signed: " + std::to_string(value) + ", hex: " + hexStr + ")";
+    }
 };
 
 Assembler::Assembler(const Parser& p) : parser(p), errorCount(0) {}
@@ -83,10 +91,12 @@ OpcodeInfo Assembler::getOpcodeInfo(const std::string& opcode) const {
     else if (opcode == "lw")    { info = {0b0000011, 0b010, 0}; }
     else if (opcode == "lbu")   { info = {0b0000011, 0b100, 0}; }
     else if (opcode == "lhu")   { info = {0b0000011, 0b101, 0}; }
+    else if (opcode == "ld")    { info = {0b0000011, 0b011, 0}; }
 
     else if (opcode == "sb") { info = {0b0100011, 0b000, 0}; }
     else if (opcode == "sh") { info = {0b0100011, 0b001, 0}; }
     else if (opcode == "sw") { info = {0b0100011, 0b010, 0}; }
+    else if (opcode == "sd") { info = {0b0100011, 0b011, 0}; }
 
     else if (opcode == "beq")  { info = {0b1100011, 0b000, 0}; }
     else if (opcode == "bne")  { info = {0b1100011, 0b001, 0}; }
@@ -94,10 +104,8 @@ OpcodeInfo Assembler::getOpcodeInfo(const std::string& opcode) const {
     else if (opcode == "bge")  { info = {0b1100011, 0b101, 0}; }
     else if (opcode == "bltu") { info = {0b1100011, 0b110, 0}; }
     else if (opcode == "bgeu") { info = {0b1100011, 0b111, 0}; }
-
     else if (opcode == "lui")   { info = {0b0110111, 0, 0}; }
     else if (opcode == "auipc") { info = {0b0010111, 0, 0}; }
-
     else if (opcode == "jal") { info = {0b1101111, 0, 0}; }
     return info;
 }
@@ -177,15 +185,23 @@ void Assembler::processDataSegment(const std::unordered_map<std::string, SymbolE
             uint32_t addr = entry.address;
             
             if (entry.isString) {
-                for (char c : entry.stringValue) {
-                    machineCode.push_back(std::make_pair(addr, static_cast<uint32_t>(c)));
-                    addr++;
+                const std::string& str = entry.stringValue;
+                size_t i = 0;
+                
+                while (i < str.length()) {
+                    uint32_t wordValue = 0;
+                    for (int j = 0; j < 4 && i < str.length(); j++, i++) {
+                        wordValue |= (static_cast<uint32_t>(str[i]) << (j * 8));
+                    }
+                    machineCode.push_back(std::make_pair(addr, wordValue));
+                    addr += 4;
                 }
-                machineCode.push_back(std::make_pair(addr, 0));
-                addr++;
-                while (addr % 4 != 0) {
-                    machineCode.push_back(std::make_pair(addr, 0));
-                    addr++;
+                if (i % 4 != 0 || i == str.length()) {
+                    uint32_t nullWord = 0;
+                    if (i % 4 == 0) {
+                        machineCode.push_back(std::make_pair(addr, nullWord));
+                        addr += 4;
+                    }
                 }
             } else {
                 for (uint64_t value : entry.numericValues) {
@@ -233,7 +249,7 @@ bool Assembler::generateIType(const std::string& opcode, const std::vector<std::
     int32_t rd = parser.getRegisterNumber(operands[0]);
     int32_t rs1;
     int32_t imm;
-    if (opcode == "lb" || opcode == "lh" || opcode == "lw" || opcode == "lbu" || opcode == "lhu") {
+    if (opcode == "lb" || opcode == "lh" || opcode == "lw" || opcode == "lbu" || opcode == "lhu" || opcode == "ld") {
         std::string offset, baseReg;
         if (Lexer::isMemory(operands[1], offset, baseReg)) {
             rs1 = parser.getRegisterNumber(baseReg);
@@ -358,8 +374,7 @@ uint32_t Assembler::generateSBType(const std::string& opcode, const std::vector<
     if (offset & 1) {
         throw std::runtime_error("Branch offset must be even");
     }
-
-    uint32_t imm12 = (offset >> 12) & 0x1;
+    uint32_t imm12 = (offset < 0) ? 1 : ((offset >> 12) & 0x1);
     uint32_t imm11 = (offset >> 11) & 0x1;
     uint32_t imm10_5 = (offset >> 5) & 0x3F;
     uint32_t imm4_1 = (offset >> 1) & 0xF;
@@ -508,8 +523,9 @@ bool Assembler::writeToFile(const std::string& filename) {
         for (const auto& pair : sortedCode) {
             if (pair.first >= DATA_SEGMENT_START && pair.first < HEAP_SEGMENT_START) {
                 hasDataSegment = true;
-                outFile << "0x" << std::setw(8) << pair.first << " 0x" << std::setw(8) << pair.second;
-                outFile << "\n";
+                uint32_t addr = pair.first;
+                uint32_t wordValue = pair.second;
+                outFile << "0x" << std::setw(8) << addr << " 0x" << std::setw(8) << wordValue << "\n";
             }
         }
         if (hasDataSegment) outFile << "\n";
@@ -573,6 +589,7 @@ std::string Assembler::decodeInstruction(uint32_t instruction) const {
             if (funct3 == 0b000) ss << "lb";
             else if (funct3 == 0b001) ss << "lh";
             else if (funct3 == 0b010) ss << "lw";
+            else if (funct3 == 0b011) ss << "ld";
             else if (funct3 == 0b100) ss << "lbu";
             else if (funct3 == 0b101) ss << "lhu";
             ss << " x" << rd << "," << imm << "(x" << rs1 << ")";
@@ -585,6 +602,7 @@ std::string Assembler::decodeInstruction(uint32_t instruction) const {
         if (funct3 == 0b000) ss << "sb";
         else if (funct3 == 0b001) ss << "sh";
         else if (funct3 == 0b010) ss << "sw";
+        else if (funct3 == 0b011) ss << "sd";
         ss << " x" << rs2 << "," << imm << "(x" << rs1 << ")";
     }
     else if (opcode == 0b1100011) {
@@ -645,7 +663,46 @@ void Assembler::formatInstruction(std::ofstream& outFile, uint32_t addr, uint32_
         std::string rs1Str = std::bitset<5>(rs1).to_string();
         std::string rs2Str = std::bitset<5>(rs2).to_string();
         std::string immStr = "NULL";
+        int32_t signedValue = 0;
 
+        if (opcode == 0b1100011) {
+            int32_t imm12 = ((instruction >> 31) & 0x1) ? -4096 : 0;
+            int32_t imm11 = ((instruction >> 7) & 0x1) << 11;
+            int32_t imm10_5 = ((instruction >> 25) & 0x3F) << 5;
+            int32_t imm4_1 = ((instruction >> 8) & 0xF) << 1;
+            
+            signedValue = imm12 | imm11 | imm10_5 | imm4_1;
+            immStr = formatSignedImmediate(signedValue, 13);
+        }
+        else if (opcode == 0b0000011 || opcode == 0b0010011) {
+            int32_t imm = (instruction >> 20) & 0xFFF;
+            if (imm & 0x800) {
+                imm |= 0xFFFFF000;
+            }
+            signedValue = imm;
+            immStr = formatSignedImmediate(signedValue, 12);
+        }
+        else if (opcode == 0b0100011) {
+            int32_t imm11_5 = (instruction >> 25) & 0x7F;
+            int32_t imm4_0 = (instruction >> 7) & 0x1F;
+            int32_t imm = (imm11_5 << 5) | imm4_0;
+            if (imm & 0x800) {
+                imm |= 0xFFFFF000;
+            }
+            signedValue = imm;
+            immStr = formatSignedImmediate(signedValue, 12);
+        }
+        else if (opcode == 0b1101111) {
+            int32_t imm = ((instruction >> 31) & 0x1) << 20;
+            imm |= ((instruction >> 12) & 0xFF) << 12;
+            imm |= ((instruction >> 20) & 0x1) << 11;
+            imm |= ((instruction >> 21) & 0x3FF) << 1;
+            if (imm & 0x100000) {
+                imm |= 0xFFE00000;
+            }
+            signedValue = imm;
+            immStr = formatSignedImmediate(signedValue, 21);
+        }
         outFile << "0x" << std::setw(8) << addr << " 0x" << std::setw(8) << instruction 
                << " , " << instStr << " # " 
                << opcodeStr << "-" 
@@ -654,7 +711,13 @@ void Assembler::formatInstruction(std::ofstream& outFile, uint32_t addr, uint32_
                << rdStr << "-"
                << rs1Str << "-"
                << rs2Str << "-"
-               << immStr << "\n";
+               << immStr;
+        if (signedValue != 0 || opcode == 0b1100011 || opcode == 0b0000011 || 
+            opcode == 0b0010011 || opcode == 0b0100011 || opcode == 0b1101111) {
+            outFile << " (Offset: " << signedValue << ")";
+        }
+        
+        outFile << "\n";
     } catch (const std::exception& e) {
         reportError("Error formatting instruction at address 0x" + 
                    std::to_string(addr) + ": " + e.what());
@@ -668,6 +731,15 @@ void Assembler::reportError(const std::string& message) const {
 
 uint32_t Assembler::calculateRelativeOffset(uint32_t currentAddress, uint32_t targetAddress) const {
     int32_t offset = static_cast<int32_t>(targetAddress - currentAddress);
+    std::cout << "Calculate relative offset: "
+              << "currentAddress=0x" << std::hex << currentAddress 
+              << ", targetAddress=0x" << targetAddress 
+              << ", raw_offset=0x" << (targetAddress - currentAddress)
+              << ", signed_offset=0x" << offset << " (" << std::dec << offset << ")" << std::endl;
+    if (offset < -4096 || offset > 4095) {
+        reportError("Branch offset out of range (-4096 to 4095): " + std::to_string(offset));
+    }
+    
     return offset;
 }
 

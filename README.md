@@ -1,103 +1,52 @@
 # RISC-V Assembler
 
 ## Overview
-This project implements a RISC-V assembler in C++, translating RISC-V assembly language into machine code. Our implementation focuses on clarity, robustness, and adherence to the RISC-V specification while providing detailed debugging information.
-
-## Technical Approach
-
-### Memory Layout
-We follow a standard RISC-V memory layout with predefined segment boundaries:
-- Text Segment: Starts at 0x00000000
-- Data Segment: Starts at 0x10000000
-- Heap: Starts at 0x10008000
-- Stack: Starts at 0x7FFFFDC
-
-### Two-Pass Assembly
-Our assembler uses a two-pass approach:
-1. **First Pass**: 
-   - Builds symbol table
-   - Resolves labels
-   - Calculates addresses for all instructions and data
-2. **Second Pass**:
-   - Generates machine code
-   - Resolves forward references
-   - Performs error checking
-
-### Machine Code Generation
-Each instruction is encoded according to its type (R, I, S, SB, U, UJ) following the RISC-V specification:
-- R-type: add, sub, sll, slt, sltu, xor, srl, sra, or, and
-- I-type: addi, slti, sltiu, xori, ori, andi, lb, lh, lw, lbu, lhu
-- S-type: sb, sh, sw
-- SB-type: beq, bne, blt, bge, bltu, bgeu
-- U-type: lui, auipc
-- UJ-type: jal
-
-### Output Format
-Our .mc file output follows a specific format for clarity and debugging:
-```
-<address> <machine_code> , <assembly_instruction> # <opcode-func3-func7-rd-rs1-rs2-immediate>
-```
-Example:
-```
-0x0 0x003100B3 , add x1,x2,x3 # 0110011-000-0000000-00001-00010-00011-NULL
-```
-
-### Special Features
-
-#### Text Segment End Marker (0xDEADBEEF)
-We use 0xDEADBEEF as a special marker at the end of the text segment for several reasons:
-1. Easy visual identification of text segment boundary
-2. Debugging aid to ensure proper segment separation
-3. Common practice in systems programming for marking memory boundaries
-4. Helps detect potential overflow into data segment
-
-#### NULL Fields
-We use "NULL" in the output format to explicitly indicate undefined or unused fields in different instruction types, making it easier to:
-- Debug instruction encoding
-- Verify correct instruction formatting
-- Maintain consistency with tools like Venus
-
-### Error Handling
-The assembler implements robust error checking:
-- Invalid instructions
-- Register out of range
-- Immediate value out of range
-- Invalid labels
-- Memory alignment issues
-- Segment boundary violations
+This project is a RISC-V assembler written in C++. The assembler translates RISC-V assembly language code into machine code that can be executed by a RISC-V processor. This project is currently in the development stage, focusing on building the core functionality of the assembler.
 
 ## Authors
-- **Ritesh Kumar** (2023CSB1153)  
-  Project Lead & Core Architecture
+- **Ritesh Kumar**  
+  Entry No: 2023CSB1153  
+  Ritesh is a computer science student with a keen interest in computer architecture and low-level programming. He is responsible for the overall project management and integration of various components.
 
-- **Ruhaan Choudhary** (2023CSB1156)  
-  Parser Implementation & Code Generation
+- **Ruhaan Choudhary**  
+  Entry No: 2023CSB1156  
+  Ruhaan specializes in software development and has a strong background in C++. He is working on the implementation of the assembler's parsing and code generation modules.
 
-- **Sumit Yadav** (2023CSB1167)  
-  Instruction Encoding & Error Handling
+- **Sumit Yadav**  
+  Entry No: 2023CSB1167  
+  Sumit has a deep understanding of assembly languages and compiler design. He is focusing on the instruction set architecture and ensuring the assembler correctly translates assembly instructions into machine code.
+
+## Development Stage
+The project is currently in the development stage, with the primary focus on creating a functional C++ assembler for the RISC-V architecture. The team is working on the following key components:
+- **Lexical Analysis**: Tokenizing the input assembly code.
+- **Syntax Analysis**: Parsing the tokens to generate an abstract syntax tree (AST).
+- **Code Generation**: Translating the AST into RISC-V machine code.
+- **Error Handling**: Implementing robust error detection and reporting mechanisms.
 
 ## Getting Started
+To get started with the project, clone the repository and follow the instructions in the `INSTALL.md` file to set up the development environment.
 
-### Building the Project
 ```bash
-g++ -o riscv_assembler assembler.cpp
+git clone https://github.com/rit3sh-x/RISC-V-Aseembler
+cd RISC-V-Aseembler
 ```
 
-### Running the Assembler
-```bash
-./riscv_assembler input_file.asm output_file.mc
-```
+## Running the Program
+Follow these steps to compile and run the assembler:
 
-### Input Assembly Format
-- Labels must end with ':'
-- One instruction per line
-- Comments start with '#'
-- Supports all basic RISC-V integer instructions
-- Data directives: .word, .byte, .string
+1. **Navigate to the project directory**:
+    ```bash
+    cd /path/to/RISC-V-Assembler
+    ```
 
-### Output Format
-The generated .mc file contains:
-1. Data segment with addresses and values
-2. Text segment with detailed instruction encoding
-3. Clear separation between segments
-4. Human-readable instruction decomposition
+2. **Compile the assembler**:
+    ```bash
+    g++ -o riscv_assembler main.cpp
+    ```
+
+3. **Run the assembler**:
+    ```bash
+    ./riscv_assembler input_file.asm output_file.mc
+    ```
+
+    Replace `input_file.asm` with the path to your RISC-V assembly file and `output_file.mc` with the desired output file name.

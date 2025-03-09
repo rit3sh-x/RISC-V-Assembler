@@ -6,7 +6,7 @@ This project is a RISC-V assembler written in C++. The assembler translates RISC
 ## Authors
 - **Ritesh Kumar**  
   Entry No: 2023CSB1153  
-  Ritesh is a computer science student with a keen interest in computer architecture and low-level programming. He is responsible for the overall project management and integration of various components.
+  Ritesh is responsible for the overall project management and integration of various components.
 
 - **Ruhaan Choudhary**  
   Entry No: 2023CSB1156  
@@ -24,7 +24,7 @@ The project is currently in the development stage, with the primary focus on cre
 - **Error Handling**: Implementing robust error detection and reporting mechanisms.
 
 ## Getting Started
-To get started with the project, clone the repository and follow the instructions in the `INSTALL.md` file to set up the development environment.
+To get started with the project, clone the repository and follow the instructions to set up the development environment.
 
 ```bash
 git clone https://github.com/rit3sh-x/RISC-V-Aseembler
@@ -41,7 +41,7 @@ Follow these steps to compile and run the assembler:
 
 2. **Compile the assembler**:
     ```bash
-    g++ -o riscv_assembler main.cpp
+    g++ -o riscv_assembler ./src/assembler.cpp
     ```
 
 3. **Run the assembler**:

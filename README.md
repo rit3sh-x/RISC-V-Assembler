@@ -19,9 +19,9 @@ This project is a RISC-V assembler written in C++. The assembler translates RISC
 ## Development Stage
 The project is currently in the development stage, with the primary focus on creating a functional C++ assembler for the RISC-V architecture. The team is working on the following key components:
 - **Lexical Analysis**: Tokenizing the input assembly code.
-- **Syntax Analysis**: Parsing the tokens to generate an abstract syntax tree (AST).
-- **Code Generation**: Translating the AST into RISC-V machine code.
-- **Error Handling**: Implementing robust error detection and reporting mechanisms.
+- **Syntax Analysis**: Parsing the tokens to generate Symbol table and check for basic syntactical errors.
+- **Code Generation**: Using double pass to convert RISC-V to machine code.
+- **Error Handling**: Implementing basic error detection and reporting mechanisms.
 
 ## Getting Started
 To get started with the project, clone the repository and follow the instructions to set up the development environment.

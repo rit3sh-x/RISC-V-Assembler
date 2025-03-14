@@ -3,18 +3,17 @@
 
 #include <unordered_set>
 #include <unordered_map>
+#include <cstdint>
 #include <string>
 
-namespace riscv
-{
+namespace riscv {
     static const uint32_t TEXT_SEGMENT_START = 0x00000000;
     static const uint32_t DATA_SEGMENT_START = 0x10000000;
     static const uint32_t HEAP_SEGMENT_START = 0x10008000;
     static const uint32_t STACK_SEGMENT_START = 0x7FFFFDC;
     static const uint32_t INSTRUCTION_SIZE = 4;
 
-    enum TokenType
-    {
+    enum TokenType {
         OPCODE,
         REGISTER,
         IMMEDIATE,
@@ -43,7 +42,7 @@ namespace riscv
         {".dword", 8},
         {".asciz", 1},
         {".asciiz", 1},
-        {".ascii", 0},
+        {".ascii", 1}
     };
 
     static const std::unordered_map<std::string, int> validRegisters = {
@@ -81,17 +80,14 @@ namespace riscv
         {"t6", 31}, {"x31", 31}
     };
 
-    struct InstructionEncoding
-    {
+    struct InstructionEncoding {
         std::unordered_map<std::string, uint32_t> func7Map;
         std::unordered_map<std::string, uint32_t> func3Map;
         std::unordered_map<std::string, uint32_t> opcodeMap;
     };
 
-    struct RTypeInstructions
-    {
-        static const InstructionEncoding &getEncoding()
-        {
+    struct RTypeInstructions {
+        static const InstructionEncoding &getEncoding() {
             static const InstructionEncoding encoding = {
                 {{"add", 0b0000000}, {"sub", 0b0100000}, {"mul", 0b0000001}, {"div", 0b0000001}, {"rem", 0b0000001}, {"and", 0b0000000}, {"or", 0b0000000}, {"xor", 0b0000000}, {"sll", 0b0000000}, {"slt", 0b0000000}, {"sra", 0b0100000}, {"srl", 0b0000000}},
                 {{"add", 0b000}, {"sub", 0b000}, {"mul", 0b000}, {"div", 0b100}, {"rem", 0b110}, {"and", 0b111}, {"or", 0b110}, {"xor", 0b100}, {"sll", 0b001}, {"slt", 0b010}, {"sra", 0b101}, {"srl", 0b101}},
@@ -100,10 +96,8 @@ namespace riscv
         }
     };
 
-    struct ITypeInstructions
-    {
-        static const InstructionEncoding &getEncoding()
-        {
+    struct ITypeInstructions {
+        static const InstructionEncoding &getEncoding() {
             static const InstructionEncoding encoding = {
                 {{"slli", 0b0000000}, {"srli", 0b0000000}, {"srai", 0b0100000}},
                 {{"addi", 0b000}, {"andi", 0b111}, {"ori", 0b110}, {"slti", 0b010}, {"sltiu", 0b011}, 
@@ -117,10 +111,8 @@ namespace riscv
         }
     };
 
-    struct STypeInstructions
-    {
-        static const InstructionEncoding &getEncoding()
-        {
+    struct STypeInstructions {
+        static const InstructionEncoding &getEncoding() {
             static const InstructionEncoding encoding = {
                 {},
                 {{"sb", 0b000}, {"sh", 0b001}, {"sw", 0b010}, {"sd", 0b011}},
@@ -129,10 +121,8 @@ namespace riscv
         }
     };
 
-    struct SBTypeInstructions
-    {
-        static const InstructionEncoding &getEncoding()
-        {
+    struct SBTypeInstructions {
+        static const InstructionEncoding &getEncoding() {
             static const InstructionEncoding encoding = {
                 {},
                 {{"beq", 0b000}, {"bne", 0b001}, {"bge", 0b101}, {"blt", 0b100}, {"bgeu", 0b111}, {"bltu", 0b110}},
@@ -141,10 +131,8 @@ namespace riscv
         }
     };
 
-    struct UTypeInstructions
-    {
-        static const InstructionEncoding &getEncoding()
-        {
+    struct UTypeInstructions {
+        static const InstructionEncoding &getEncoding() {
             static const InstructionEncoding encoding = {
                 {},
                 {},
@@ -153,10 +141,8 @@ namespace riscv
         }
     };
 
-    struct UJTypeInstructions
-    {
-        static const InstructionEncoding &getEncoding()
-        {
+    struct UJTypeInstructions {
+        static const InstructionEncoding &getEncoding() {
             static const InstructionEncoding encoding = {
                 {},
                 {},
@@ -164,5 +150,20 @@ namespace riscv
             return encoding;
         }
     };
+
+    std::string getTokenTypeName(TokenType type) {
+        switch (type) {
+            case TokenType::OPCODE: return "OPCODE";
+            case TokenType::REGISTER: return "REGISTER";
+            case TokenType::IMMEDIATE: return "IMMEDIATE";
+            case TokenType::MEMORY: return "MEMORY";
+            case TokenType::LABEL: return "LABEL";
+            case TokenType::DIRECTIVE: return "DIRECTIVE";
+            case TokenType::UNKNOWN: return "UNKNOWN";
+            case TokenType::ERROR: return "ERROR";
+            case TokenType::STRING: return "STRING";
+            default: return "UNDEFINED";
+        }
+    }
 }
 #endif

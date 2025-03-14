@@ -1,5 +1,6 @@
 #ifndef LEXER_HPP
 #define LEXER_HPP
+
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -23,7 +24,6 @@ public:
     static std::vector<std::vector<Token>> Tokenizer(const std::string& filename);
 
 private:
-    static std::string getTokenTypeName(TokenType type);
     static std::string trim(const std::string& str);
     static bool isImmediate(const std::string& token);
     static bool isDirective(const std::string& token);
@@ -31,7 +31,6 @@ private:
     static std::vector<Token> tokenizeLine(const std::string& line, int lineNumber);
     static bool isRegister(const std::string& token);
     static bool isMemory(const std::string& token, std::string& offset, std::string& reg);
-    static std::string tokenTypeToString(TokenType type);
     static Token classifyToken(const std::string& token, int lineNumber);
 
     friend class Parser;
@@ -45,75 +44,31 @@ std::string Lexer::trim(const std::string& str) {
     return str.substr(first, last - first + 1);
 }
 
-std::string Lexer::tokenTypeToString(TokenType type) {
-    switch (type) {
-        case TokenType::OPCODE: return "OPCODE";
-        case TokenType::REGISTER: return "REGISTER";
-        case TokenType::IMMEDIATE: return "IMMEDIATE";
-        case TokenType::LABEL: return "LABEL";
-        case TokenType::DIRECTIVE: return "DIRECTIVE";
-        case TokenType::STRING: return "STRING";
-        case TokenType::ERROR: return "ERROR";
-        case TokenType::UNKNOWN: return "UNKNOWN";
-        default: return "INVALID";
-    }
-}
-
-std::string Lexer::getTokenTypeName(TokenType type) {
-    return tokenTypeToString(type);
-}
-
 bool Lexer::isRegister(const std::string& token) {
-    std::string lowerToken = token;
-    std::transform(lowerToken.begin(), lowerToken.end(), lowerToken.begin(), ::tolower);
-    if (validRegisters.find(lowerToken) != validRegisters.end()) {
-        return true;
-    }
-    if (lowerToken[0] == 'x' && lowerToken.length() > 1) {
-        try {
-            int num = std::stoi(lowerToken.substr(1));
-            return num >= 0 && num <= 31;
-        } catch (...) {
-            return false;
-        }
-    }
-    
-    return false;
+    return validRegisters.count(token) > 0;
 }
 
 bool Lexer::isImmediate(const std::string& token) {
     if (token.empty()) return false;
     
     size_t pos = 0;
-    bool isHex = false;
-    bool isBinary = false;
-    if (token[0] == '-' || token[0] == '+') pos = 1;
-    if (pos >= token.length()) return false;
+    if (token[0] == '-' || token[0] == '+') {
+        if (token.length() == 1) return false;
+        pos = 1;
+    }
     if (token.length() > pos + 2 && token[pos] == '0') {
-        char format = ::tolower(token[pos + 1]);
+        char format = std::tolower(token[pos + 1]);
         if (format == 'x') {
-            isHex = true;
-            pos += 2;
+            return token.length() > pos + 2 && std::all_of(token.begin() + pos + 2, token.end(), ::isxdigit);
         } else if (format == 'b') {
-            isBinary = true;
-            pos += 2;
+            return token.length() > pos + 2 && std::all_of(token.begin() + pos + 2, token.end(), [](char c) { return c == '0' || c == '1'; });
         }
-    }
-
-    if (pos >= token.length()) return false;
-    if (isHex) {
-        return std::all_of(token.begin() + pos, token.end(), ::isxdigit);
-    }
-    if (isBinary) {
-        return std::all_of(token.begin() + pos, token.end(), [](char c) { return c == '0' || c == '1'; });
     }
     return std::all_of(token.begin() + pos, token.end(), ::isdigit);
 }
 
 bool Lexer::isDirective(const std::string& token) {
-    std::string lowerToken = token;
-    std::transform(lowerToken.begin(), lowerToken.end(), lowerToken.begin(), ::tolower);
-    return directives.count(lowerToken) > 0;
+    return directives.count(token) > 0;
 }
 
 bool Lexer::isLabel(const std::string& token) {
@@ -122,49 +77,38 @@ bool Lexer::isLabel(const std::string& token) {
 
 bool Lexer::isMemory(const std::string& token, std::string& offset, std::string& reg) {
     size_t open = token.find('(');
-    size_t close = token.find(')');
-    if (open == std::string::npos || close == std::string::npos || close <= open) {
-        return false;
-    }
+    size_t close = token.find(')', open);
+    if (open == std::string::npos || close == std::string::npos || close <= open) return false;
     offset = trim(token.substr(0, open));
     reg = trim(token.substr(open + 1, close - open - 1));
-    if (offset.empty()) {
-        offset = "0";
-    }
-    if (!isRegister(reg)) {
-        return false;
-    }
-    if (!offset.empty() && !isImmediate(offset)) {
-        return false;
-    }
-    if (close + 1 < token.length()) {
-        std::string remainder = trim(token.substr(close + 1));
-        if (!remainder.empty()) {
-            return false;
-        }
-    }
+    if (offset.empty()) offset = "0";
+    if (!isRegister(reg) || (!offset.empty() && !isImmediate(offset))) return false;
+    if (close + 1 < token.length() && !trim(token.substr(close + 1)).empty()) return false;
     return true;
 }
 
 Token Lexer::classifyToken(const std::string& token, int lineNumber) {
     std::string trimmed = trim(token);
-    if (trimmed.empty()) return {TokenType::UNKNOWN, "", lineNumber};
-    if (isRegister(trimmed)) {
+    if (trimmed.empty()) 
+        return {TokenType::UNKNOWN, "", lineNumber};
+
+    if (isRegister(trimmed)) 
         return {TokenType::REGISTER, trimmed, lineNumber};
-    }
-    if (opcodes.count(trimmed)) {
+    
+    if (opcodes.count(trimmed)) 
         return {TokenType::OPCODE, trimmed, lineNumber};
-    }
-    if (isDirective(trimmed)) {
+    
+    if (isDirective(trimmed)) 
         return {TokenType::DIRECTIVE, trimmed, lineNumber};
-    }
-    if (isImmediate(trimmed)) {
+    
+    if (isImmediate(trimmed)) 
         return {TokenType::IMMEDIATE, trimmed, lineNumber};
-    }
-    if (isLabel(trimmed)) {
+    
+    if (isLabel(trimmed) && trimmed.length() > 1) {
         std::string labelName = trimmed.substr(0, trimmed.length() - 1);
         return {TokenType::LABEL, labelName, lineNumber};
     }
+    
     return {TokenType::UNKNOWN, trimmed, lineNumber};
 }
 
@@ -172,136 +116,107 @@ std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) 
     std::vector<Token> tokens;
     std::string token;
     bool inString = false;
-    bool expectOperand = false;
-    bool expectValueAfterComma = false;
-    bool lastWasOpcode = false;
-
+    bool inMemory = false;
+    int parenthesesCount = 0;
+    
     std::string trimmedLine = trim(line);
     if (trimmedLine.empty()) return tokens;
 
-    size_t i = 0;
-    while (i < trimmedLine.length()) {
+    for (size_t i = 0; i < trimmedLine.length(); ++i) {
         char c = trimmedLine[i];
-
-        if (!inString && (c == '#' || (c == '/' && i + 1 < trimmedLine.length() && trimmedLine[i + 1] == '/'))) {
-            if (!token.empty()) {
-                std::string offset, reg;
-                if (isMemory(token, offset, reg)) {
-                    if (offset.empty()) offset = "0";
-                    tokens.push_back({TokenType::IMMEDIATE, offset, lineNumber});
-                    tokens.push_back({TokenType::REGISTER, reg, lineNumber});
-                } else {
-                    Token t = classifyToken(token, lineNumber);
-                    tokens.push_back(t);
-                    lastWasOpcode = (t.type == TokenType::OPCODE);
-                }
-                token.clear();
-            }
+        if (!inString && !inMemory && (c == '#' || (c == '/' && i + 1 < trimmedLine.length() && trimmedLine[i + 1] == '/'))) {
             break;
         }
-
-        if (c == '"') {
-            if (!inString) {
-                inString = true;
+        if (c == '"' && !inMemory) {
+            if (inString) {
+                tokens.push_back({TokenType::STRING, token, lineNumber});
+                token.clear();
+                inString = false;
+            } else {
                 if (!token.empty()) {
-                    std::string offset, reg;
-                    if (isMemory(token, offset, reg)) {
-                        if (offset.empty()) offset = "0";
-                        tokens.push_back({TokenType::IMMEDIATE, offset, lineNumber});
-                        tokens.push_back({TokenType::REGISTER, reg, lineNumber});
-                    } else {
-                        Token t = classifyToken(token, lineNumber);
-                        tokens.push_back(t);
-                        lastWasOpcode = (t.type == TokenType::OPCODE);
-                    }
+                    tokens.push_back(classifyToken(token, lineNumber));
                     token.clear();
                 }
-            } else {
-                inString = false;
-                tokens.push_back({TokenType::STRING, token, lineNumber});
-                lastWasOpcode = false;
-                token.clear();
+                inString = true;
             }
+            continue;
         }
-        else if (inString) {
+        if (inString) {
             token += c;
+            continue;
         }
-        else if (std::isspace(c)) {
-            if (!token.empty()) {
+        if (c == '(' && !inMemory) {
+            inMemory = true;
+            parenthesesCount = 1;
+            token += c;
+            continue;
+        }
+        if (inMemory) {
+            token += c;
+            if (c == '(') parenthesesCount++;
+            if (c == ')') parenthesesCount--;
+            if (parenthesesCount == 0) {
+                inMemory = false;
                 std::string offset, reg;
                 if (isMemory(token, offset, reg)) {
-                    if (offset.empty()) offset = "0";
                     tokens.push_back({TokenType::IMMEDIATE, offset, lineNumber});
                     tokens.push_back({TokenType::REGISTER, reg, lineNumber});
                 } else {
-                    Token t = classifyToken(token, lineNumber);
-                    tokens.push_back(t);
-                    lastWasOpcode = (t.type == TokenType::OPCODE);
+                    tokens.push_back(classifyToken(token, lineNumber));
                 }
                 token.clear();
-                expectValueAfterComma = false;
             }
+            continue;
         }
-        else if (c == ',') {
+        if (std::isspace(c) || c == ',') {
             if (!token.empty()) {
-                std::string offset, reg;
-                if (isMemory(token, offset, reg)) {
-                    if (offset.empty()) offset = "0";
-                    tokens.push_back({TokenType::IMMEDIATE, offset, lineNumber});
-                    tokens.push_back({TokenType::REGISTER, reg, lineNumber});
-                } else {
-                    Token t = classifyToken(token, lineNumber);
-                    tokens.push_back(t);
-                    lastWasOpcode = (t.type == TokenType::OPCODE);
-                }
+                tokens.push_back(classifyToken(token, lineNumber));
                 token.clear();
             }
-            expectValueAfterComma = true;
+            continue;
         }
-        else {
-            token += c;
-        }
-        ++i;
+        
+        token += c;
     }
-
     if (!token.empty()) {
-        std::string offset, reg;
-        if (isMemory(token, offset, reg)) {
-            if (offset.empty()) offset = "0";
-            tokens.push_back({TokenType::IMMEDIATE, offset, lineNumber});
-            tokens.push_back({TokenType::REGISTER, reg, lineNumber});
-        } else {
-            Token t = classifyToken(token, lineNumber);
-            tokens.push_back(t);
-            lastWasOpcode = (t.type == TokenType::OPCODE);
-        }
+        tokens.push_back(classifyToken(token, lineNumber));
     }
-
     if (inString) {
         std::cerr << "Lexer Error on Line " << lineNumber << ": Unterminated string\n";
         exit(1);
     }
-
+    if (inMemory) {
+        std::cerr << "Lexer Error on Line " << lineNumber << ": Unterminated memory reference\n";
+        exit(1);
+    }
     return tokens;
 }
 
 std::vector<std::vector<Token>> Lexer::Tokenizer(const std::string& filename) {
     std::vector<std::vector<Token>> tokenizedLines;
+    if (filename.empty()) {
+        std::cerr << "Error: Empty filename provided\n";
+        exit(1);
+    }
     std::ifstream inputFile(filename);
     if (!inputFile.is_open()) {
         std::cerr << "Error: Could not open file '" << filename << "'\n";
         exit(1);
-    }
-
+    }  
     std::string line;
     int lineNumber = 0;
-
-    while (std::getline(inputFile, line)) {
-        ++lineNumber;
-        std::vector<Token> tokens = tokenizeLine(line, lineNumber);
-        if (!tokens.empty()) {
-            tokenizedLines.push_back(tokens);
+    try {
+        while (std::getline(inputFile, line)) {
+            ++lineNumber;
+            std::vector<Token> tokens = tokenizeLine(line, lineNumber);
+            if (!tokens.empty()) {
+                tokenizedLines.push_back(std::move(tokens));
+            }
         }
+    } catch (const std::exception& e) {
+        std::cerr << "Error while processing line " << lineNumber << ": " << e.what() << "\n";
+        inputFile.close();
+        exit(1);
     }
     inputFile.close();
     return tokenizedLines;

@@ -7,13 +7,13 @@
 #include <vector>
 #include <string>
 #include <map>
-#include <unordered_map> // Changed from <unordered_map> to match getDataMap return type
+#include <unordered_map>
 #include <cstdint>
 #include <iomanip>
 #include <bitset>
 #include <sstream>
 #include <stdexcept>
-#include "types.hpp"
+#include "../types.hpp"
 
 using namespace riscv;
 
@@ -104,7 +104,7 @@ public:
     std::map<uint32_t, std::pair<uint32_t, std::string>> getTextMap() const;
     std::map<uint32_t, uint32_t> getMemoryChanges() const;
     Stage getCurrentStage() const;
-    std::map<std::string, std::string> getConsoleOutput() const {
+    std::map<std::string, std::string> getConsoleOutput() {
         std::ostringstream oss;
         oss << "PC: 0x" << std::hex << std::setw(8) << std::setfill('0') << currentInstruction.PC << ", Stage: ";
         std::map<std::string, std::string> response = logs;

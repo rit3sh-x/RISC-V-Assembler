@@ -62,7 +62,7 @@ public:
         return getCurrentStage();
     }
     
-    val getConsoleOutputJS() const {
+    val getConsoleOutputJS() {
         std::map<std::string, std::string> output = getConsoleOutput();
         val result = val::object();
         for (const auto& [key, value] : output) {

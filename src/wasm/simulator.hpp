@@ -1,12 +1,13 @@
 #ifndef SIMULATOR_HPP
 #define SIMULATOR_HPP
 
+#include <emscripten.h>
+#include <emscripten/bind.h>
 #include <iostream>
 #include <vector>
 #include <string>
-#include <fstream>
 #include <map>
-#include <unordered_map>
+#include <unordered_map> // Changed from <unordered_map> to match getDataMap return type
 #include <cstdint>
 #include <iomanip>
 #include <bitset>
@@ -22,12 +23,12 @@ enum InstructionType { R, I, S, SB, U, UJ };
 struct Instruction {
     uint32_t PC, opcode, rs1, rs2, rd, instruction, func3, func7;
     Stage stage;
-    Instruction() : opcode(0), rs1(0), rs2(0), rd(0), stage(Stage::FETCH), instruction(0), func3(0), func7(0), PC(0) {};
+    Instruction() : opcode(0), rs1(0), rs2(0), rd(0), stage(Stage::FETCH), instruction(0), func3(0), func7(0), PC(0) {}
 };
 
 struct InstructionRegisters {
     uint32_t RA, RB, RM, RY, RZ;
-    InstructionRegisters(): RA(0), RB(0), RM(0), RZ(0), RY(0) {};
+    InstructionRegisters() : RA(0), RB(0), RM(0), RZ(0), RY(0) {}
 };
 
 class Simulator {
@@ -57,8 +58,42 @@ private:
     void writeback();
 
 public:
-    Simulator();
-    bool loadProgram(const std::string &input);
+    Simulator() { reset(); }
+
+    bool loadProgram(const std::string &input) {
+        std::stringstream ss(input);
+        std::string line;
+        reset();
+
+        try {
+            while (getline(ss, line)) {
+                size_t first = line.find_first_not_of(" \t");
+                if (first == std::string::npos) continue;
+                size_t last = line.find_last_not_of(" \t");
+                line = line.substr(first, last - first + 1);
+                if (line.empty() || line[0] == '#') continue;
+                std::stringstream line_ss(line);
+                std::string addrStr, instStr;
+                if (!(line_ss >> addrStr >> instStr)) {
+                    logs["Error"] = "Malformed instruction line: " + line;
+                    return false;
+                }
+                uint32_t addr = std::stoul(addrStr, nullptr, 16);
+                uint32_t data = std::stoul(instStr, nullptr, 16);
+                if (addr >= DATA_SEGMENT_START) {
+                    dataMap[addr] = data;
+                } else {
+                    textMap[addr] = {data, parseInstructions(data)};
+                }
+            }
+            return true;
+        } catch (const std::exception& e) {
+            logs["Error"] = e.what();
+            emscripten_log(EM_LOG_ERROR, "%s", e.what());
+            return false;
+        }
+    }
+
     bool step();
     void run();
     std::string parseInstructions(uint32_t instHex);
@@ -69,47 +104,15 @@ public:
     std::map<uint32_t, std::pair<uint32_t, std::string>> getTextMap() const;
     std::map<uint32_t, uint32_t> getMemoryChanges() const;
     Stage getCurrentStage() const;
-    std::map<std::string, std::string> getConsoleOutput();
+    std::map<std::string, std::string> getConsoleOutput() const {
+        std::ostringstream oss;
+        oss << "PC: 0x" << std::hex << std::setw(8) << std::setfill('0') << currentInstruction.PC << ", Stage: ";
+        std::map<std::string, std::string> response = logs;
+        logs.clear();
+        return response;
+    }
     bool isRunning() const;
 };
-
-Simulator::Simulator() {
-    reset();
-}
-
-bool Simulator::loadProgram(const std::string &input) {
-    std::stringstream ss(input);
-    std::string line;
-    reset();
-
-    try {
-        while (getline(ss, line)) {
-            size_t first = line.find_first_not_of(" \t");
-            if (first == std::string::npos) continue;
-            size_t last = line.find_last_not_of(" \t");
-            line = line.substr(first, last - first + 1);
-            if (line.empty() || line[0] == '#') continue;
-            std::stringstream line_ss(line);
-            std::string addrStr, instStr;
-            if (!(line_ss >> addrStr >> instStr)) {
-                logs["Error"] = "Malformed instruction line: " + line;
-                return false;
-            }
-            uint32_t addr = std::stoul(addrStr, nullptr, 16);
-            uint32_t data = std::stoul(instStr, nullptr, 16);
-            if (addr >= DATA_SEGMENT_START) {
-                dataMap[addr] = data;
-            } else {
-                textMap[addr] = {data, parseInstructions(data)};
-            }
-        }
-        return true;
-    } catch (const std::exception& e) {
-        logs["Error"] = e.what();
-        throw std::runtime_error(e.what());
-        return false;
-    }
-}
 
 void Simulator::initialiseRegisters() {
     for (int i = 0; i < 32; i++) registers[i] = 0x00000000;
@@ -129,6 +132,7 @@ void Simulator::reset() {
     running = true;
     memoryCurrentChanges.clear();
     textMap.clear();
+    logs.clear();
 }
 
 InstructionType Simulator::classifyInstructions(uint32_t instHex) {
@@ -152,8 +156,7 @@ InstructionType Simulator::classifyInstructions(uint32_t instHex) {
     }
 
     auto sbTypeEncoding = SBTypeInstructions::getEncoding();
-    for (const auto &[name, op] : sbTypeEncoding.opcodeMap)
-    {
+    for (const auto &[name, op] : sbTypeEncoding.opcodeMap) {
         if (op == opcode && sbTypeEncoding.func3Map.at(name) == func3) return InstructionType::SB;
     }
 
@@ -393,7 +396,7 @@ void Simulator::memoryAccess() {
         if (op == currentInstruction.opcode && iTypeEncoding.func3Map.at(name) == currentInstruction.func3) {
             if (name == "lb") {
                 isValidAddress(address, 1);
-                instructionRegisters.RZ = dataMap.count(address) ?  static_cast<int8_t>(dataMap[address]) : 0;
+                instructionRegisters.RZ = dataMap.count(address) ? static_cast<int8_t>(dataMap[address]) : 0;
             } else if (name == "lh") {
                 isValidAddress(address, 2);
                 instructionRegisters.RZ = static_cast<int16_t>(
@@ -457,7 +460,7 @@ void Simulator::writeback() {
 }
 
 bool Simulator::isValidAddress(uint32_t addr, uint32_t size) {
-    if (addr + size > MEMORY_SIZE || addr + size < 0x0){
+    if (addr + size > MEMORY_SIZE || addr + size < 0x0) {
         logs["Error"] = "Memory is not Valid";
         throw std::runtime_error("Error: Memory is not Valid");
     }
@@ -468,14 +471,15 @@ bool Simulator::step() {
     if (!running) {
         return false;
     }
+
     try {
         switch (currentInstruction.stage) {
             case Stage::FETCH:
                 fetchInstruction();
+                logs["Fetch"] = "Instruction is fetched current PC: 0x" + std::to_string(currentInstruction.PC);
                 if (!running) {
                     return false;
                 }
-                logs["Fetch"] = "Instruction is fetched current PC: 0x" + std::to_string(currentInstruction.PC);
                 currentInstruction.stage = Stage::DECODE;
                 clockCycles += 1;
                 break;
@@ -496,7 +500,7 @@ bool Simulator::step() {
 
             case Stage::MEMORY:
                 memoryAccess();
-                logs["Memory"] = "Memory is accessed checking wheter to read, write or do nothing";
+                logs["Memory"] = "Memory is accessed checking whether to read, write or do nothing";
                 currentInstruction.stage = Stage::WRITEBACK;
                 clockCycles += 1;
                 break;
@@ -510,12 +514,12 @@ bool Simulator::step() {
                 break;
 
             default:
-                logs["Error"] = "Invalid pipeline stage Occured";
+                logs["Error"] = "Invalid pipeline stage Occurred";
                 throw std::runtime_error("Error: Invalid pipeline stage");
         }
         return running;
     } catch (const std::runtime_error& e) {
-        std::cerr << e.what() << std::endl;
+        emscripten_log(EM_LOG_ERROR, "%s", e.what());
         running = false;
         return false;
     }
@@ -536,7 +540,7 @@ void Simulator::run() {
 
 const uint32_t* Simulator::getRegisters() const { return registers; }
 
-uint32_t Simulator::getPC() const { return PC; }
+uint32_t Simulator::getPC() const { return currentInstruction.PC; }
 
 std::string Simulator::parseInstructions(uint32_t instHex) {
     uint32_t opcode = instHex & 0x7F;
@@ -547,10 +551,8 @@ std::string Simulator::parseInstructions(uint32_t instHex) {
     uint32_t func7 = (instHex >> 25) & 0x7F;
 
     auto rTypeEncoding = RTypeInstructions::getEncoding();
-    for (const auto &[name, op] : rTypeEncoding.opcodeMap)
-    {
-        if (op == opcode && rTypeEncoding.func3Map.at(name) == func3 && rTypeEncoding.func7Map.at(name) == func7)
-        {
+    for (const auto &[name, op] : rTypeEncoding.opcodeMap) {
+        if (op == opcode && rTypeEncoding.func3Map.at(name) == func3 && rTypeEncoding.func7Map.at(name) == func7) {
             std::stringstream ss;
             ss << name << " x" << rd << ", x" << rs1 << ", x" << rs2;
             return ss.str();
@@ -558,10 +560,8 @@ std::string Simulator::parseInstructions(uint32_t instHex) {
     }
 
     auto iTypeEncoding = ITypeInstructions::getEncoding();
-    for (const auto &[name, op] : iTypeEncoding.opcodeMap)
-    {
-        if (op == opcode && iTypeEncoding.func3Map.at(name) == func3)
-        {
+    for (const auto &[name, op] : iTypeEncoding.opcodeMap) {
+        if (op == opcode && iTypeEncoding.func3Map.at(name) == func3) {
             int32_t imm = (instHex >> 20);
             if (imm & 0x800) imm |= 0xFFFFF000;
             std::stringstream ss;
@@ -571,10 +571,8 @@ std::string Simulator::parseInstructions(uint32_t instHex) {
     }
 
     auto sTypeEncoding = STypeInstructions::getEncoding();
-    for (const auto &[name, op] : sTypeEncoding.opcodeMap)
-    {
-        if (op == opcode && sTypeEncoding.func3Map.at(name) == func3)
-        {
+    for (const auto &[name, op] : sTypeEncoding.opcodeMap) {
+        if (op == opcode && sTypeEncoding.func3Map.at(name) == func3) {
             int32_t imm = ((instHex >> 25) << 5) | ((instHex >> 7) & 0x1F);
             if (imm & 0x800) imm |= 0xFFFFF000;
             std::stringstream ss;
@@ -584,10 +582,8 @@ std::string Simulator::parseInstructions(uint32_t instHex) {
     }
 
     auto sbTypeEncoding = SBTypeInstructions::getEncoding();
-    for (const auto &[name, op] : sbTypeEncoding.opcodeMap)
-    {
-        if (op == opcode && sbTypeEncoding.func3Map.at(name) == func3)
-        {
+    for (const auto &[name, op] : sbTypeEncoding.opcodeMap) {
+        if (op == opcode && sbTypeEncoding.func3Map.at(name) == func3) {
             int32_t imm = ((instHex >> 31) << 12) | (((instHex >> 7) & 1) << 11) | (((instHex >> 25) & 0x3F) << 5) | (((instHex >> 8) & 0xF) << 1);
             if (imm & 0x1000) imm |= 0xFFFFE000;
             std::stringstream ss;
@@ -597,10 +593,8 @@ std::string Simulator::parseInstructions(uint32_t instHex) {
     }
 
     auto uTypeEncoding = UTypeInstructions::getEncoding();
-    for (const auto &[name, op] : uTypeEncoding.opcodeMap)
-    {
-        if (op == opcode)
-        {
+    for (const auto &[name, op] : uTypeEncoding.opcodeMap) {
+        if (op == opcode) {
             uint32_t imm = instHex & 0xFFFFF000;
             std::stringstream ss;
             ss << name << " x" << rd << ", " << (imm >> 12);
@@ -609,10 +603,8 @@ std::string Simulator::parseInstructions(uint32_t instHex) {
     }
 
     auto ujTypeEncoding = UJTypeInstructions::getEncoding();
-    for (const auto &[name, op] : ujTypeEncoding.opcodeMap)
-    {
-        if (op == opcode)
-        {
+    for (const auto &[name, op] : ujTypeEncoding.opcodeMap) {
+        if (op == opcode) {
             int32_t imm = ((instHex >> 31) << 20) | (((instHex >> 12) & 0xFF) << 12) | (((instHex >> 20) & 1) << 11) | (((instHex >> 21) & 0x3FF) << 1);
             if (imm & 0x100000) imm |= 0xFFE00000;
             std::stringstream ss;
@@ -633,14 +625,6 @@ std::map<uint32_t, std::pair<uint32_t, std::string>> Simulator::getTextMap() con
 std::map<uint32_t, uint32_t> Simulator::getMemoryChanges() const { return memoryCurrentChanges; }
 
 Stage Simulator::getCurrentStage() const { return currentInstruction.stage; }
-
-std::map<std::string, std::string> Simulator::getConsoleOutput() {
-    std::ostringstream oss;
-    oss << "PC: 0x" << std::hex << std::setw(8) << std::setfill('0') << currentInstruction.PC << ", Stage: ";
-    std::map<std::string, std::string> response = logs;
-    logs.clear();
-    return response;
-}
 
 bool Simulator::isRunning() const { return running; }
 

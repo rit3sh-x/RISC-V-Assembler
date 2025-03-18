@@ -8,18 +8,23 @@ import { Play, FileUp } from 'lucide-react';
 interface EditorProps {
   text: string;
   setText: (text: string) => void;
-  activeTab: "editor" | "simulator";
   setActiveTab: (tab: "editor" | "simulator") => void;
 }
 
-const Editor = ({ text, setText, activeTab, setActiveTab }: EditorProps) => {
+const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
 
   useEffect(() => {
     const savedCode = localStorage.getItem('riscvMachineCode');
+    const savedTab = localStorage.getItem('activeTab');
+    if (savedTab) {
+      setActiveTab(savedTab as "editor" | "simulator");
+    } else{
+      setActiveTab('editor');
+    }
     if (savedCode) {
       setText(savedCode);
     }
-  }, []);
+  }, [setText, setActiveTab]);
 
   const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
     monaco.languages.register({ id: 'riscv-assembly' });
@@ -88,13 +93,12 @@ const Editor = ({ text, setText, activeTab, setActiveTab }: EditorProps) => {
   return (
     <div className="flex flex-col h-full p-4">
       <div className="flex justify-start gap-2 mb-4">
-        {/* Upload Button */}
         <label className="flex items-center px-4 py-2 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 transition-colors">
           <FileUp className="w-5 h-5 mr-2" />
           Upload Code
           <input
             type="file"
-            accept=".s,.asm,.txt"
+            accept=".s,.asm,.txt,.mc"
             onChange={handleFileUpload}
             className="hidden"
           />
@@ -119,7 +123,8 @@ const Editor = ({ text, setText, activeTab, setActiveTab }: EditorProps) => {
           options={{
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
-            fontSize: 14,
+            fontSize: 16,
+            cursorBlinking: 'blink',
             wordWrap: 'on',
             lineNumbers: 'on',
             renderLineHighlight: 'all',

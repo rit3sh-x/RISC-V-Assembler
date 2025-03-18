@@ -4,7 +4,7 @@ import Link from "next/link";
 import Editor from "@/components/Editor";
 import Simulator from "@/components/Simulator";
 import { Github, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSimulator } from '@/hooks/useSimulator';
 import Script from 'next/script';
 import { Card, CardContent } from "@/components/ui/card";

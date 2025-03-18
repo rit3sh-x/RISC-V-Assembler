@@ -85,19 +85,16 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
     description: ""
   });
 
-  const handleTerminalError = useCallback((newTerminal: Record<string, string>) => {
-    if (newTerminal["404"]) {
-      setDialogMessage({
-        title: "Error 404: Not Found",
-        description: newTerminal["404"]
-      });
-      setTimeout(() => {
-        setIsDialogOpen(true);
-        simulatorInstance.reset();
-        updateSimulatorState();
-      }, 0);
+  const showTerminalErrorDialog = useCallback((errorMessage: string) => {
+    setDialogMessage({
+      title: "Error 404: Not Found",
+      description: errorMessage
+    });
+    setIsDialogOpen(true);
+    if (simulatorInstance) {
+      simulatorInstance.reset();
     }
-  }, []);
+  }, [simulatorInstance]);
 
   const updateSimulatorState = useCallback(() => {
     if (!simulatorInstance) return;
@@ -112,8 +109,10 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
     setCurrentStage(simulatorInstance.getCurrentStage());
     setRunning(simulatorInstance.isRunning());
     setPipelineRegisters(simulatorInstance.getPipelineRegisters());
-    handleTerminalError(newTerminal);
-  }, [simulatorInstance, handleTerminalError]);
+    if (newTerminal["404"]) {
+      setTimeout(() => showTerminalErrorDialog(newTerminal["404"]), 0);
+    }
+  }, [simulatorInstance, showTerminalErrorDialog]);
 
   useEffect(() => {
     updateSimulatorState();
@@ -140,7 +139,6 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
         value = textMap[address].first;
         found = true;
       }
-
       else if (addressNum >= 0x10000000 && addressNum <= 0x80000000) {
         const byteAddresses = [
           addressNum,
@@ -181,7 +179,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
 
   useEffect(() => {
     updateMemoryEntries();
-  }, [memoryStartIndex, isHex, textMap, dataMap, updateMemoryEntries]);
+  }, [updateMemoryEntries]);
 
   const stageToString = (stage: Stage) => {
     switch (stage) {
@@ -235,7 +233,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
   const toggleDisplayFormat = () => {
     setDisplayFormat(displayFormat === "hex" ? "decimal" : "hex");
     setIsHex(!isHex);
-  }
+  };
 
   const jumpToSegment = (segment: string) => {
     let baseAddress = 0;
@@ -250,15 +248,15 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
 
   const navigateRegistersUp = () => {
     if (registerStartIndex > 0) {
-      setRegisterStartIndex(prev => Math.max(0, prev - ITEMS_PER_PAGE))
+      setRegisterStartIndex(prev => Math.max(0, prev - ITEMS_PER_PAGE));
     }
-  }
+  };
 
   const navigateRegistersDown = () => {
     if (registerStartIndex + ITEMS_PER_PAGE < registers.length) {
-      setRegisterStartIndex(prev => Math.min(registers.length - ITEMS_PER_PAGE, prev + ITEMS_PER_PAGE))
+      setRegisterStartIndex(prev => Math.min(registers.length - ITEMS_PER_PAGE, prev + ITEMS_PER_PAGE));
     }
-  }
+  };
 
   const renderTerminalOutput = () => {
     if (Object.entries(terminal).length === 0) {
@@ -553,8 +551,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                     return (
                       <div
                         key={Stage[stage]}
-                        className={`p-2 border rounded ${(currentStage === stage && running) ? "opacity-100" : "opacity-30"
-                          }`}
+                        className={`p-2 border rounded ${(currentStage === stage && running) ? "opacity-100" : "opacity-30"}`}
                         style={{ backgroundColor: color }}
                       >
                         <div className="font-semibold text-white">{Stage[stage]}</div>

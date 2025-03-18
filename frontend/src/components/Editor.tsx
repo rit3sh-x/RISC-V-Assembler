@@ -3,7 +3,7 @@
 import React, { useEffect } from 'react';
 import MonacoEditor from '@monaco-editor/react';
 import { editor } from 'monaco-editor';
-import { Play, FileUp } from 'lucide-react';
+import { FileUp } from 'lucide-react';
 
 interface EditorProps {
   text: string;

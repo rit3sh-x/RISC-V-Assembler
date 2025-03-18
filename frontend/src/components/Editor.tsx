@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import MonacoEditor from '@monaco-editor/react';
 import { editor } from 'monaco-editor';
 import { FileUp } from 'lucide-react';
@@ -12,6 +12,7 @@ interface EditorProps {
 }
 
 const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
   useEffect(() => {
     const savedCode = localStorage.getItem('riscvMachineCode');
@@ -21,6 +22,8 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
   }, [setText, setActiveTab]);
 
   const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
+    editorRef.current = editor;
+    
     monaco.languages.register({ id: 'riscv-assembly' });
     monaco.languages.setMonarchTokensProvider('riscv-assembly', {
       tokenizer: {
@@ -33,7 +36,6 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
         ],
       },
     });
-
     monaco.editor.defineTheme('riscv-theme', {
       base: 'vs',
       inherit: true,
@@ -47,10 +49,22 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
       colors: {
         'editor.background': '#FFFFFF',
         'editor.lineHighlightBackground': '#F0F0F0',
+        'editorCursor.foreground': '#0000FF',
       },
     });
 
     editor.updateOptions({ theme: 'riscv-theme' });
+    const editorDom = editor.getDomNode();
+    if (editorDom) {
+      const cursorLayer = editorDom.querySelector('.cursor');
+      if (cursorLayer) {
+        cursorLayer.classList.remove('monaco-mouse-cursor-text-hidden');
+        cursorLayer.classList.add('monaco-mouse-cursor-text');
+        (cursorLayer as HTMLElement).style.visibility = 'visible';
+        (cursorLayer as HTMLElement).style.backgroundColor = '#0000FF';
+      }
+    }
+    editor.focus();
   };
 
   const handleEditorChange = (value: string | undefined) => {
@@ -100,7 +114,9 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
             fontSize: 16,
-            cursorBlinking: 'blink',
+            cursorBlinking: 'phase',
+            cursorStyle: 'line',
+            cursorWidth: 4,
             wordWrap: 'on',
             lineNumbers: 'on',
             renderLineHighlight: 'all',

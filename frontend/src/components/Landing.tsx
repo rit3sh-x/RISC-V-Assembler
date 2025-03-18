@@ -21,9 +21,10 @@ export default function Landing() {
   const router = useRouter();
   const { simulator, loading, error } = useSimulator();
   const [activeTab, setActiveTab] = useState<"editor" | "simulator">("editor");
-  const [code, setCode] = useState<string>(`0x00000000 0x00000000 addi x1, x0, 10
-0x00000000 0x00000014 addi x2, x0, 0x14
-0x00000000 0x00000000 add x4, x1, x2`);
+  const [code, setCode] = useState<string>(`# ------------ TEXT SEGMENT ------------ #
+0x00000000 0x002082b3 , add x5,x1,x2 # 0110011-000-0000000-00101-00001-00010-NULL
+0x00000004 0x0041f333 , and x6,x3,x4 # 0110011-111-0000000-00110-00011-00100-NULL
+0x00000008 0x0062e3b3 , or x7,x5,x6 # 0110011-110-0000000-00111-00101-00110-NULL`);
 
   const handleScriptLoad = () => {
     window.simulatorScriptLoaded = true;

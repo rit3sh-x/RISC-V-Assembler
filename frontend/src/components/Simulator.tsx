@@ -77,7 +77,6 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
   const [memoryStartIndex, setMemoryStartIndex] = useState<number>(0);
   const [memoryEntries, setMemoryEntries] = useState<MemoryCell[]>([]);
   const [displayFormat, setDisplayFormat] = useState<"hex" | "decimal">("hex");
-  const [currentPC, setCurrentPC] = useState(0);
   const [registerStartIndex, setRegisterStartIndex] = useState(0);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMessage, setDialogMessage] = useState({
@@ -341,11 +340,10 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {Object.keys(textMap).length > 0 ? (
-                        Object.entries(textMap).map(([key, instruction], index) => (
+                        Object.entries(textMap).map(([key, instruction]) => (
                           <tr
                             key={key}
-                            className={`hover:bg-gray-50 ${index === currentPC ? "bg-blue-50" : ""} h-10`}
-                            onClick={() => setCurrentPC(index)}
+                            className={`hover:bg-gray-50 ${((currentStage === Stage.FETCH)&&(parseInt(key) === pc)) || ((currentStage !== Stage.FETCH)&&(parseInt(key) + 4 === pc)) ? "bg-blue-50" : ""} h-10`}
                           >
                             <td className="py-2 px-3 font-mono whitespace-nowrap">
                               0x{parseInt(key).toString(16).padStart(8, '0').toUpperCase()}

@@ -5,6 +5,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { RefreshCw, Play, StepForward, ChevronUp, ChevronDown, Hash, SquareCode } from "lucide-react"
 import type { Simulator } from "@/types/simulator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog"
 
 const ITEMS_PER_PAGE = 10
 
@@ -61,7 +68,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
   const [cycles, setCycles] = useState<number>(0);
   const [dataMap, setDataMap] = useState<Record<string, number>>({});
   const [textMap, setTextMap] = useState<Record<string, { first: number, second: string }>>({});
-  // const [terminal, setTerminal] = useState<Record<string, string>>({});
+  const [terminal, setTerminal] = useState<Record<string, string>>({});
   const [running, setRunning] = useState<boolean>(false);
   const [currentStage, setCurrentStage] = useState<Stage>(Stage.FETCH);
   const [pipelineRegisters, setPipelineRegisters] = useState<Record<string, number>>({});
@@ -69,32 +76,55 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
 
   const [memoryStartIndex, setMemoryStartIndex] = useState<number>(0);
   const [memoryEntries, setMemoryEntries] = useState<MemoryCell[]>([]);
-  const [displayFormat, setDisplayFormat] = useState<"hex" | "decimal">("hex")
-  const [currentPC, setCurrentPC] = useState(0)
-  const [registerStartIndex, setRegisterStartIndex] = useState(0)
-  const [consoleOutput, setConsoleOutput] = useState<string[]>([])
+  const [displayFormat, setDisplayFormat] = useState<"hex" | "decimal">("hex");
+  const [currentPC, setCurrentPC] = useState(0);
+  const [registerStartIndex, setRegisterStartIndex] = useState(0);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [dialogMessage, setDialogMessage] = useState({
+    title: "",
+    description: ""
+  });
+
+  const handleTerminalError = useCallback((newTerminal: Record<string, string>) => {
+    if (newTerminal["404"]) {
+      setDialogMessage({
+        title: "Error 404: Not Found",
+        description: newTerminal["404"]
+      });
+      setTimeout(() => {
+        setIsDialogOpen(true);
+        simulatorInstance.reset();
+        updateSimulatorState();
+      }, 0);
+    }
+  }, []);
+
+  const updateSimulatorState = useCallback(() => {
+    if (!simulatorInstance) return;
+    
+    const newTerminal = simulatorInstance.getConsoleOutput();
+    setTerminal(newTerminal);
+    setRegisters(simulatorInstance.getRegisters());
+    setPc(simulatorInstance.getPC());
+    setCycles(simulatorInstance.getCycles());
+    setDataMap(simulatorInstance.getDataMap());
+    setTextMap(simulatorInstance.getTextMap());
+    setCurrentStage(simulatorInstance.getCurrentStage());
+    setRunning(simulatorInstance.isRunning());
+    setPipelineRegisters(simulatorInstance.getPipelineRegisters());
+    handleTerminalError(newTerminal);
+  }, [simulatorInstance, handleTerminalError]);
 
   useEffect(() => {
-    if (simulatorInstance) {
-      setRegisters(simulatorInstance.getRegisters());
-      setPc(simulatorInstance.getPC());
-      setCycles(simulatorInstance.getCycles());
-      setDataMap(simulatorInstance.getDataMap());
-      setTextMap(simulatorInstance.getTextMap());
-      // setTerminal(simulatorInstance.getConsoleOutput());
-      setCurrentStage(simulatorInstance.getCurrentStage());
-      setRunning(simulatorInstance.isRunning());
-      setPipelineRegisters(simulatorInstance.getPipelineRegisters());
-      // updateMemoryEntries();
-    }
-  }, [simulatorInstance, text]);
+    updateSimulatorState();
+  }, [updateSimulatorState]);
 
   const updateMemoryEntries = useCallback(() => {
     const entries = Array.from({ length: ITEMS_PER_PAGE }, (_, index) => {
       const addressNum = memoryStartIndex + index * 4;
       const address = addressNum.toString();
       const addressString = addressNum.toString(16).padStart(8, '0').toUpperCase();
-  
+
       if (addressNum >= parseInt(MEMORY_SEGMENTS.END, 16)) {
         return {
           address: "----------",
@@ -102,7 +132,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
           bytes: ["--", "--", "--", "--"]
         };
       }
-  
+
       let value = 0;
       let found = false;
 
@@ -110,7 +140,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
         value = textMap[address].first;
         found = true;
       }
-      
+
       else if (addressNum >= 0x10000000 && addressNum <= 0x80000000) {
         const byteAddresses = [
           addressNum,
@@ -126,20 +156,20 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
       }
       const valueHex = value.toString(16).padStart(8, '0').toUpperCase();
       const bytesDisplay = found ? [
-        isHex 
-          ? valueHex.substring(0, 2) 
+        isHex
+          ? valueHex.substring(0, 2)
           : Number.parseInt(valueHex.substring(0, 2), 16).toString(),
-        isHex 
-          ? valueHex.substring(2, 4) 
+        isHex
+          ? valueHex.substring(2, 4)
           : Number.parseInt(valueHex.substring(2, 4), 16).toString(),
-        isHex 
-          ? valueHex.substring(4, 6) 
+        isHex
+          ? valueHex.substring(4, 6)
           : Number.parseInt(valueHex.substring(4, 6), 16).toString(),
-        isHex 
-          ? valueHex.substring(6, 8) 
+        isHex
+          ? valueHex.substring(6, 8)
           : Number.parseInt(valueHex.substring(6, 8), 16).toString()
       ] : ["00", "00", "00", "00"];
-  
+
       return {
         address: addressString,
         value: valueHex,
@@ -172,40 +202,23 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
 
   const handleStep = () => {
     simulatorInstance.step();
-    setRegisters(simulatorInstance.getRegisters());
-    setPc(simulatorInstance.getPC());
-    setCycles(simulatorInstance.getCycles());
-    setDataMap(simulatorInstance.getDataMap());
-    setTextMap(simulatorInstance.getTextMap());
-    // setTerminal(simulatorInstance.getConsoleOutput());
-    setCurrentStage(simulatorInstance.getCurrentStage());
-    setRunning(simulatorInstance.isRunning());
-    setPipelineRegisters(simulatorInstance.getPipelineRegisters());
+    updateSimulatorState();
   };
 
   const resetRegistersAndMemory = () => {
-    setRegisters(Array.from({ length: 32 }, () => 0));
-    setDataMap({});
-    setTextMap({});
-    setCurrentPC(0);
-    setMemoryStartIndex(0);
-    setPc(0);
-    setCycles(0);
+    simulatorInstance.reset();
+    updateSimulatorState();
     updateMemoryEntries();
-    setConsoleOutput(["Simulator reset"]);
   };
 
   const handleRun = () => {
     simulatorInstance.run();
-    setRegisters(simulatorInstance.getRegisters());
-    setPc(simulatorInstance.getPC());
-    setCycles(simulatorInstance.getCycles());
-    setDataMap(simulatorInstance.getDataMap());
-    setTextMap(simulatorInstance.getTextMap());
-    // setTerminal(simulatorInstance.getConsoleOutput());
-    setCurrentStage(simulatorInstance.getCurrentStage());
-    setRunning(simulatorInstance.isRunning());
-    setPipelineRegisters(simulatorInstance.getPipelineRegisters());
+    updateSimulatorState();
+  };
+
+  const handleAssemble = () => {
+    simulatorInstance.loadProgram(text);
+    updateSimulatorState();
   };
 
   const navigateMemoryUp = () => {
@@ -247,21 +260,60 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
     }
   }
 
-  const handleAssemble = () => {
-    simulatorInstance.loadProgram(text);
-    setRegisters(simulatorInstance.getRegisters());
-    setPc(simulatorInstance.getPC());
-    setCycles(simulatorInstance.getCycles());
-    setDataMap(simulatorInstance.getDataMap());
-    setTextMap(simulatorInstance.getTextMap());
-    // setTerminal(simulatorInstance.getConsoleOutput());
-    setCurrentStage(simulatorInstance.getCurrentStage());
-    setRunning(simulatorInstance.isRunning());
-    setPipelineRegisters(simulatorInstance.getPipelineRegisters());
+  const renderTerminalOutput = () => {
+    if (Object.entries(terminal).length === 0) {
+      return running ? (
+        <div className="text-gray-500">
+          Nothing to log.
+        </div>
+      ) : (
+        <div className="text-gray-500">
+          No code loaded. Assemble RISC-V machine code to begin.
+        </div>
+      );
+    }
+
+    return Object.entries(terminal).map(([key, value], index) => {
+      switch (key) {
+        case '400':
+          return (
+            <div key={index} className="mb-1 text-red-600">
+              {value}
+            </div>
+          );
+        case '300':
+          return (
+            <div key={index} className="mb-1 text-orange-600">
+              {value}
+            </div>
+          );
+        case '200':
+          return (
+            <div key={index} className="mb-1 text-green-600">
+              {value}
+            </div>
+          );
+        default:
+          return (
+            <div key={index} className="mb-1">
+              {value}
+            </div>
+          );
+      }
+    });
   };
 
   return (
     <div className="w-full h-full p-[2%]">
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{dialogMessage.title}</DialogTitle>
+            <DialogDescription>{dialogMessage.description}</DialogDescription>
+          </DialogHeader>
+          <Button onClick={() => setIsDialogOpen(false)}>Close</Button>
+        </DialogContent>
+      </Dialog>
       <div className="grid grid-rows-8 h-full gap-[2%]">
         <div className="row-span-6 grid grid-cols-1 xl:grid-cols-2 gap-[2%]">
           <div className="border rounded-lg overflow-hidden bg-white shadow-sm h-full flex flex-col">
@@ -271,7 +323,6 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                   <SquareCode className="h-4 w-4 mr-2" />
                   Assemble
                 </Button>
-                {/* TODO: Add a reset button */}
                 <Button variant="outline" size="sm" onClick={resetRegistersAndMemory}>
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Reset
@@ -320,7 +371,6 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                   </table>
                 </div>
 
-                {/* TODO: add a step and run button */}
                 <div className="bg-gray-100 py-2 px-3 flex justify-between gap-2 border-t mt-auto min-h-[8%]">
                   <div className="flex items-center gap-2 text-sm text-gray-600">
                     <span>Total Instructions: {Object.keys(textMap).length ?? 0}</span>
@@ -350,7 +400,6 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
             </div>
           </div>
 
-          {/* TODO: Add memory view */}
           <div className="border rounded-lg overflow-hidden bg-white shadow-sm h-full flex flex-col">
             <div className="bg-gray-100 py-2 px-3 border-b min-h-[8%]">
               <h2 className="text-lg font-semibold">System Board</h2>
@@ -504,7 +553,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                     return (
                       <div
                         key={Stage[stage]}
-                        className={`p-2 border rounded ${currentStage === stage ? "opacity-100" : "opacity-30"
+                        className={`p-2 border rounded ${(currentStage === stage && running) ? "opacity-100" : "opacity-30"
                           }`}
                         style={{ backgroundColor: color }}
                       >
@@ -519,29 +568,15 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
           </div>
         </div>
 
-        {/* TODO: Console */}
         <div className="row-span-2 grid grid-cols-1 md:grid-cols-2 gap-[2%]">
           <div className="border rounded-lg overflow-hidden bg-white shadow-sm h-full flex flex-col">
             <div className="bg-gray-100 py-2 px-3 border-b min-h-[15%]">
               <h2 className="text-lg font-semibold">Console Output</h2>
             </div>
             <div className="flex-1 p-3 font-mono text-sm bg-gray-50 overflow-y-auto">
-              {consoleOutput.map((line, index) => (
-                <div key={index} className="mb-1">{line}</div>
-              ))}
-              {(running && consoleOutput.length === 0) && (
-                <div className="text-gray-500">
-                  Nothing to log.
-                </div>
-              )}
-              {(consoleOutput.length === 0 && !running) && (
-                <div className="text-gray-500">
-                  No code loaded. Assemble RISC-V machine code to begin.
-                </div>
-              )}
+              {renderTerminalOutput()}
             </div>
           </div>
-
           <div className="border rounded-lg overflow-hidden bg-white shadow-sm h-full flex flex-col">
             <div className="bg-gray-100 py-2 px-3 border-b min-h-[15%]">
               <h2 className="text-lg font-semibold">System Information</h2>
@@ -551,19 +586,19 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                 <div>
                   <h3 className="font-semibold mb-2">System Variables</h3>
                   <div className="text-xs space-y-1">
-                    <div>RA: {pipelineRegisters["RA"]}</div>
-                    <div>RB: {pipelineRegisters["RB"]}</div>
-                    <div>RM: {pipelineRegisters["RM"]}</div>
-                    <div>RY: {pipelineRegisters["RY"]}</div>
+                    <div>RA: {`0x${(pipelineRegisters["RA"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
+                    <div>RB: {`0x${(pipelineRegisters["RB"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
+                    <div>RM: {`0x${(pipelineRegisters["RM"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
+                    <div>RY: {`0x${(pipelineRegisters["RY"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
                   </div>
                 </div>
                 <div>
                   <h3 className="font-semibold mb-2">&nbsp;</h3>
                   <div className="text-xs space-y-1">
                     <div>Current Stage: {!running ? "STANDBY" : stageToString(currentStage)}</div>
-                    <div>Clock Cycles: {cycles?? 0}</div>
+                    <div>Clock Cycles: {cycles ?? 0}</div>
                     <div>Current PC: 0x{pc.toString(16).toUpperCase()}</div>
-                    <div>RZ: {pipelineRegisters["RZ"]}</div>
+                    <div>RZ: {`0x${(pipelineRegisters["RZ"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
                   </div>
                 </div>
               </div>

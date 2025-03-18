@@ -13,7 +13,7 @@
 #include <bitset>
 #include <sstream>
 #include <stdexcept>
-#include "../types.hpp"
+#include "types.hpp"
 
 using namespace riscv;
 
@@ -37,18 +37,15 @@ private:
     static constexpr uint32_t MEMORY_SIZE = 0x80000000;
 
     uint32_t PC, registers[NUMREGISTERS];
-    std::map<uint32_t, uint32_t> memoryCurrentChanges;
     std::unordered_map<uint32_t, uint8_t> dataMap;
     std::map<uint32_t, std::pair<uint32_t, std::string>> textMap;
     uint64_t clockCycles;
-    std::map<std::string, std::string> logs;
     
     InstructionRegisters instructionRegisters;
     Instruction currentInstruction;
     bool running;
 
     void initialiseRegisters();
-    void reset();
     bool isValidAddress(uint32_t, uint32_t);
     InstructionType classifyInstructions(uint32_t);
     void fetchInstruction();
@@ -58,24 +55,25 @@ private:
     void writeback();
 
 public:
+    std::map<int, std::string> logs;
+    void reset();
     Simulator() { reset(); }
 
     bool loadProgram(const std::string &input) {
         std::stringstream ss(input);
         std::string line;
         reset();
+        running = true;
 
         try {
             while (getline(ss, line)) {
-                size_t first = line.find_first_not_of(" \t");
-                if (first == std::string::npos) continue;
-                size_t last = line.find_last_not_of(" \t");
-                line = line.substr(first, last - first + 1);
+                line.erase(line.begin(), std::find_if(line.begin(), line.end(), [](unsigned char ch) {return !std::isspace(ch);}));
+                line.erase(std::find_if(line.rbegin(), line.rend(), [](unsigned char ch) {return !std::isspace(ch);}).base(), line.end());
                 if (line.empty() || line[0] == '#') continue;
                 std::stringstream line_ss(line);
                 std::string addrStr, instStr;
                 if (!(line_ss >> addrStr >> instStr)) {
-                    logs["Error"] = "Malformed instruction line: " + line;
+                    logs[404] = "Malformed instruction line: " + line;
                     return false;
                 }
                 uint32_t addr = std::stoul(addrStr, nullptr, 16);
@@ -88,7 +86,7 @@ public:
             }
             return true;
         } catch (const std::exception& e) {
-            logs["Error"] = e.what();
+            logs[404] = e.what();
             emscripten_log(EM_LOG_ERROR, "%s", e.what());
             return false;
         }
@@ -99,16 +97,16 @@ public:
     std::string parseInstructions(uint32_t instHex);
     const uint32_t* getRegisters() const;
     uint32_t getPC() const;
-    uint64_t getCycles() const;
+    uint32_t getCycles() const;
+    InstructionRegisters getPipelineRegisters() const;
     std::unordered_map<uint32_t, uint8_t> getDataMap() const;
     std::map<uint32_t, std::pair<uint32_t, std::string>> getTextMap() const;
     std::map<uint32_t, uint32_t> getMemoryChanges() const;
     Stage getCurrentStage() const;
-    std::map<std::string, std::string> getConsoleOutput() {
+    std::map<int, std::string> getConsoleOutput() const {
         std::ostringstream oss;
         oss << "PC: 0x" << std::hex << std::setw(8) << std::setfill('0') << currentInstruction.PC << ", Stage: ";
-        std::map<std::string, std::string> response = logs;
-        logs.clear();
+        std::map<int, std::string> response = logs;
         return response;
     }
     bool isRunning() const;
@@ -129,8 +127,7 @@ void Simulator::reset() {
     dataMap.clear();
     PC = TEXT_SEGMENT_START;
     clockCycles = 0;
-    running = true;
-    memoryCurrentChanges.clear();
+    running = false;
     textMap.clear();
     logs.clear();
 }
@@ -169,7 +166,7 @@ InstructionType Simulator::classifyInstructions(uint32_t instHex) {
     for (const auto &[name, op] : ujTypeEncoding.opcodeMap) {
         if (op == opcode) return InstructionType::UJ;
     }
-    logs["Error"] = "The Instruction is not classified";
+    logs[400] = "The Instruction is not classified";
     throw std::runtime_error("Error: The Instruction is not classified.");
 }
 
@@ -177,11 +174,10 @@ void Simulator::fetchInstruction() {
     if (!isValidAddress(PC, 4)) {
         std::ostringstream oss;
         oss << "Fetch error: Invalid PC 0x" << std::hex << PC;
-        logs["Error"] = oss.str();
+        logs[400] = oss.str();
         throw std::runtime_error(oss.str());
     }
     auto it = textMap.find(PC);
-    memoryCurrentChanges.clear();
     currentInstruction = Instruction();
     instructionRegisters = InstructionRegisters();
     if (it != textMap.end()) {
@@ -247,7 +243,7 @@ void Simulator::decodeInstruction() {
         }
 
         default:
-            logs["Error"] = "The instruction is not decoded";
+            logs[400] = "The instruction is not decoded";
             throw std::runtime_error("Error: The instruction is not decoded");
     }
 }
@@ -384,7 +380,7 @@ void Simulator::executeInstruction() {
             return;
         }
     }
-    logs["Error"] = "The Instruction is not executed";
+    logs[400] = "The Instruction is not executed";
     throw std::runtime_error("Error: The Instruction is not executed");
 }
 
@@ -421,21 +417,19 @@ void Simulator::memoryAccess() {
             uint32_t valueToStore = instructionRegisters.RM;
             if (name == "sb") {
                 dataMap[address] = valueToStore & 0xFF;
-                memoryCurrentChanges[address] = valueToStore;
             } else if (name == "sh") {
                 dataMap[address] = valueToStore & 0xFF;
                 dataMap[address + 1] = (valueToStore >> 8) & 0xFF;
-                memoryCurrentChanges[address] = valueToStore;
             } else if (name == "sw") {
                 dataMap[address] = valueToStore & 0xFF;
                 dataMap[address + 1] = (valueToStore >> 8) & 0xFF;
                 dataMap[address + 2] = (valueToStore >> 16) & 0xFF;
                 dataMap[address + 3] = (valueToStore >> 24) & 0xFF;
-                memoryCurrentChanges[address] = valueToStore;
             }
             return;
         }
     }
+    instructionRegisters.RZ = instructionRegisters.RY;
 }
 
 void Simulator::writeback() {
@@ -452,7 +446,7 @@ void Simulator::writeback() {
             case InstructionType::SB:
                 break;
             default:
-                logs["Error"] = "Unknown instruction type in writeback";
+                logs[400] = "Unknown instruction type in writeback";
                 throw std::runtime_error("Error: Unknown instruction type in writeback");
         }
     }
@@ -461,7 +455,7 @@ void Simulator::writeback() {
 
 bool Simulator::isValidAddress(uint32_t addr, uint32_t size) {
     if (addr + size > MEMORY_SIZE || addr + size < 0x0) {
-        logs["Error"] = "Memory is not Valid";
+        logs[300] = "Memory is not Valid";
         throw std::runtime_error("Error: Memory is not Valid");
     }
     return true;
@@ -476,7 +470,7 @@ bool Simulator::step() {
         switch (currentInstruction.stage) {
             case Stage::FETCH:
                 fetchInstruction();
-                logs["Fetch"] = "Instruction is fetched current PC: 0x" + std::to_string(currentInstruction.PC);
+                logs[200] = "Instruction is fetched current PC: 0x" + std::to_string(currentInstruction.PC);
                 if (!running) {
                     return false;
                 }
@@ -486,35 +480,35 @@ bool Simulator::step() {
 
             case Stage::DECODE:
                 decodeInstruction();
-                logs["Decode"] = "Instruction is decoded";
+                logs[200] = "Instruction is decoded";
                 currentInstruction.stage = Stage::EXECUTE;
                 clockCycles += 1;
                 break;
 
             case Stage::EXECUTE:
                 executeInstruction();
-                logs["Execute"] = "Instruction is executed";
+                logs[200] = "Instruction is executed";
                 currentInstruction.stage = Stage::MEMORY;
                 clockCycles += 1;
                 break;
 
             case Stage::MEMORY:
                 memoryAccess();
-                logs["Memory"] = "Memory is accessed checking whether to read, write or do nothing";
+                logs[200] = "Memory is accessed checking whether to read, write or do nothing";
                 currentInstruction.stage = Stage::WRITEBACK;
                 clockCycles += 1;
                 break;
 
             case Stage::WRITEBACK:
                 writeback();
-                logs["Writeback"] = "Instruction is written back to the register file";
+                logs[200] = "Instruction is written back to the register file";
                 currentInstruction = Instruction();
                 instructionRegisters = InstructionRegisters();
                 clockCycles += 1;
                 break;
 
             default:
-                logs["Error"] = "Invalid pipeline stage Occurred";
+                logs[404] = "Invalid pipeline stage Occurred";
                 throw std::runtime_error("Error: Invalid pipeline stage");
         }
         return running;
@@ -535,12 +529,12 @@ void Simulator::run() {
             break;
         }
     }
-    logs["Success"] = "Simulation completed. Clock cycles: " + std::to_string(clockCycles);
+    logs[200] = "Simulation completed. Clock cycles: " + std::to_string(clockCycles);
 }
 
 const uint32_t* Simulator::getRegisters() const { return registers; }
 
-uint32_t Simulator::getPC() const { return currentInstruction.PC; }
+uint32_t Simulator::getPC() const { return PC; }
 
 std::string Simulator::parseInstructions(uint32_t instHex) {
     uint32_t opcode = instHex & 0x7F;
@@ -612,20 +606,20 @@ std::string Simulator::parseInstructions(uint32_t instHex) {
             return ss.str();
         }
     }
-    logs["Error"] = "The Instruction is not valid";
+    logs[400] = "The Instruction is not valid";
     throw std::runtime_error("Error: The Instruction is not valid");
 }
 
-uint64_t Simulator::getCycles() const { return clockCycles; }
+uint32_t Simulator::getCycles() const { return clockCycles; }
 
 std::unordered_map<uint32_t, uint8_t> Simulator::getDataMap() const { return dataMap; }
 
 std::map<uint32_t, std::pair<uint32_t, std::string>> Simulator::getTextMap() const { return textMap; }
 
-std::map<uint32_t, uint32_t> Simulator::getMemoryChanges() const { return memoryCurrentChanges; }
-
 Stage Simulator::getCurrentStage() const { return currentInstruction.stage; }
 
 bool Simulator::isRunning() const { return running; }
+
+InstructionRegisters Simulator::getPipelineRegisters() const { return instructionRegisters; }
 
 #endif

@@ -3,19 +3,17 @@ declare namespace createSimulator {
     loadProgram(input: string): boolean;
     step(): boolean;
     run(): void;
+    reset(): void;
     parseInstructions(instHex: number): string;
     getRegisters(): number[];
     getPC(): number;
     getCycles(): number;
     getDataMap(): Record<string, number>;
     getTextMap(): Record<string, { first: number, second: string }>;
-    getMemoryChanges(): Record<string, number>;
     getConsoleOutput(): Record<string, string>;
     getPipelineRegisters(): Record<string, number>;
     getCurrentStage(): number;
     isRunning(): boolean;
-    getLastError(): string;
-    clearError(): void;
   }
 
   export enum Stage {

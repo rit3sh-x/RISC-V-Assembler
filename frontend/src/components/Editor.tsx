@@ -15,12 +15,6 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
 
   useEffect(() => {
     const savedCode = localStorage.getItem('riscvMachineCode');
-    const savedTab = localStorage.getItem('activeTab');
-    if (savedTab) {
-      setActiveTab(savedTab as "editor" | "simulator");
-    } else{
-      setActiveTab('editor');
-    }
     if (savedCode) {
       setText(savedCode);
     }
@@ -66,17 +60,6 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
     }
   };
 
-  const handleCompile = () => {
-    const machineCode = text
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line)
-      .join('\n');
-    setActiveTab('simulator');
-    setText(machineCode);
-    localStorage.setItem('riscvMachineCode', machineCode);
-  };
-
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -103,13 +86,6 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
             className="hidden"
           />
         </label>
-        <button
-          onClick={handleCompile}
-          className="flex items-center px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
-        >
-          <Play className="w-5 h-5 mr-2" />
-          Compile
-        </button>
       </div>
 
       <div className="flex-grow rounded-2xl shadow-lg overflow-hidden border border-gray-300">

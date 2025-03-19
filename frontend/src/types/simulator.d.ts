@@ -14,6 +14,7 @@ declare namespace createSimulator {
     getPipelineRegisters(): Record<string, number>;
     getCurrentStage(): number;
     isRunning(): boolean;
+    getInstruction(): number;
   }
 
   export enum Stage {

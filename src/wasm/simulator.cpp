@@ -7,6 +7,7 @@ using namespace emscripten;
 val mapToVal(const std::map<uint32_t, std::pair<uint32_t, std::string>>& m) {
     val result = val::object();
     for (const auto& [key, value] : m) {
+        if(value.first == 0xDEADBEEF) continue;
         val pair = val::object();
         pair.set("first", value.first);
         pair.set("second", value.second);
@@ -47,7 +48,7 @@ public:
         try {
             return sim.loadProgram(input);
         } catch (const std::exception& e) {
-            sim.logs[404] = "Error loading program";
+            sim.logs[404] = "Error loading program: Invalid instruction format or syntax error";
             return false;
         }
     }
@@ -56,7 +57,7 @@ public:
         try {
             return sim.step();
         } catch (const std::exception& e) {
-            sim.logs[404] = "An Exception occured";
+            sim.logs[404] = "Exception occurred during execution step: " + std::string(e.what());
             return false;
         }
     }
@@ -65,7 +66,7 @@ public:
         try {
             sim.run();
         } catch (const std::exception& e) {
-            sim.logs[404] = "An Exception occured";
+            sim.logs[404] = "Exception occurred during full program execution: " + std::string(e.what());
         }
     }
 
@@ -73,7 +74,7 @@ public:
         try {
             sim.reset();
         } catch (const std::exception& e) {
-            sim.logs[404] = "An Exception occured";
+            sim.logs[404] = "Exception occurred during simulator reset: " + std::string(e.what());
         }
     }
 
@@ -88,9 +89,9 @@ public:
     
     uint32_t getPC() const { return sim.getPC(); }
     uint32_t getCycles() const { return sim.getCycles(); }
+    uint32_t getInstruction() const { return sim.getInstruction(); }
     val getDataMap() const { return unorderedMapToVal(sim.getDataMap()); }
     val getTextMap() const { return mapToVal(sim.getTextMap()); }
-    val getMemoryChanges() const { return mapUint32ToVal(sim.getMemoryChanges()); }
     val getConsoleOutput() const { return mapIntToStringVal(sim.getConsoleOutput()); }
     int getCurrentStage() const { return static_cast<int>(sim.getCurrentStage()); }
     bool isRunning() const { return sim.isRunning(); }
@@ -98,6 +99,7 @@ public:
         try {
             const auto& regs = sim.getPipelineRegisters();
             val result = val::object();
+
             result.set("RA", regs.RA);
             result.set("RB", regs.RB);
             result.set("RM", regs.RM);
@@ -106,7 +108,7 @@ public:
             
             return result;
         } catch (const std::exception& e) {
-            sim.logs[400] = "Unknown error";
+            sim.logs[400] = "Failed to retrieve pipeline registers: " + std::string(e.what());
             return val::object();
         }
     }
@@ -138,5 +140,6 @@ EMSCRIPTEN_BINDINGS(simulator_module) {
         .function("getConsoleOutput", &SimulatorWrapper::getConsoleOutput)
         .function("getCurrentStage", &SimulatorWrapper::getCurrentStage)
         .function("isRunning", &SimulatorWrapper::isRunning)
-        .function("getPipelineRegisters", &SimulatorWrapper::getPipelineRegisters);
+        .function("getPipelineRegisters", &SimulatorWrapper::getPipelineRegisters)
+        .function("getInstruction", &SimulatorWrapper::getInstruction);
 }

@@ -159,7 +159,6 @@ bool Assembler::assemble() {
     }
     machineCode.clear();
     processTextSegment(parser.getParsedInstructions());
-    machineCode.push_back({TEXT_SEGMENT_START + parser.getParsedInstructions().size() * 4, 0xDEADBEEF});
     processDataSegment(parser.getSymbolTable());
     return !hasErrors();
 }
@@ -384,12 +383,7 @@ bool Assembler::writeToFile(const std::string &filename) {
     outFile << "# ------------ TEXT SEGMENT ------------ #\n";
     for (const auto& [addr, inst] : machineCode) {
         if (addr < DATA_SEGMENT_START) {
-            if (inst == 0xDEADBEEF) {
-                outFile << "0x" << std::hex << std::setw(8) << std::setfill('0') << addr << " 0x"
-                        << std::setw(8) << inst << " , [TEXT_SEGMENT_END]\n";
-            } else {
-                formatInstruction(outFile, addr, inst);
-            }
+            formatInstruction(outFile, addr, inst);
         }
     }
 

@@ -13,15 +13,17 @@
 #include <bitset>
 #include <sstream>
 #include <stdexcept>
-#include "types.hpp"
+#include <algorithm>
+#include "../types.hpp"
 
 using namespace riscv;
 
 enum class Stage { FETCH, DECODE, EXECUTE, MEMORY, WRITEBACK };
-enum InstructionType { R, I, S, SB, U, UJ };
+enum class InstructionType { R, I, S, SB, U, UJ };
 
 struct Instruction {
     uint32_t PC, opcode, rs1, rs2, rd, instruction, func3, func7;
+    InstructionType instructionType;
     Stage stage;
     Instruction() : opcode(0), rs1(0), rs2(0), rd(0), stage(Stage::FETCH), instruction(0), func3(0), func7(0), PC(0) {}
 };
@@ -73,7 +75,7 @@ public:
                 std::stringstream line_ss(line);
                 std::string addrStr, instStr;
                 if (!(line_ss >> addrStr >> instStr)) {
-                    logs[404] = "Malformed instruction line: " + line;
+                    logs[404] = "Malformed instruction line: '" + line + "'. Expected format: <address> <instruction>";
                     return false;
                 }
                 uint32_t addr = std::stoul(addrStr, nullptr, 16);
@@ -84,9 +86,10 @@ public:
                     textMap[addr] = {data, parseInstructions(data)};
                 }
             }
+            logs[200] = "Program loaded successfully with " + std::to_string(textMap.size()) + " instructions";
             return true;
         } catch (const std::exception& e) {
-            logs[404] = e.what();
+            logs[404] = "Failed to load program: " + std::string(e.what());
             emscripten_log(EM_LOG_ERROR, "%s", e.what());
             return false;
         }
@@ -94,6 +97,7 @@ public:
 
     bool step();
     void run();
+    uint32_t getInstruction() const;
     std::string parseInstructions(uint32_t instHex);
     const uint32_t* getRegisters() const;
     uint32_t getPC() const;
@@ -101,7 +105,6 @@ public:
     InstructionRegisters getPipelineRegisters() const;
     std::unordered_map<uint32_t, uint8_t> getDataMap() const;
     std::map<uint32_t, std::pair<uint32_t, std::string>> getTextMap() const;
-    std::map<uint32_t, uint32_t> getMemoryChanges() const;
     Stage getCurrentStage() const;
     std::map<int, std::string> getConsoleOutput() const {
         std::ostringstream oss;
@@ -166,14 +169,17 @@ InstructionType Simulator::classifyInstructions(uint32_t instHex) {
     for (const auto &[name, op] : ujTypeEncoding.opcodeMap) {
         if (op == opcode) return InstructionType::UJ;
     }
-    logs[400] = "The Instruction is not classified";
-    throw std::runtime_error("Error: The Instruction is not classified.");
+    
+    std::stringstream ss;
+    ss << "Instruction 0x" << std::hex << instHex << " could not be classified: Invalid opcode (0x" << opcode << ")";
+    logs[400] = ss.str();
+    throw std::runtime_error(ss.str());
 }
 
 void Simulator::fetchInstruction() {
     if (!isValidAddress(PC, 4)) {
         std::ostringstream oss;
-        oss << "Fetch error: Invalid PC 0x" << std::hex << PC;
+        oss << "Fetch error: Invalid PC address 0x" << std::hex << PC << " (out of bounds)";
         logs[400] = oss.str();
         throw std::runtime_error(oss.str());
     }
@@ -183,6 +189,7 @@ void Simulator::fetchInstruction() {
     if (it != textMap.end()) {
         uint32_t rawInstruction = it->second.first;
         currentInstruction.instruction = rawInstruction;
+        currentInstruction.instructionType = classifyInstructions(currentInstruction.instruction);
         currentInstruction.PC = PC;
         if (currentInstruction.instruction == 0xDEADBEEF) {
             running = false;
@@ -203,8 +210,8 @@ void Simulator::decodeInstruction() {
     currentInstruction.func7 = (currentInstruction.instruction >> 25) & 0x7F;
 
     instructionRegisters.RA = registers[currentInstruction.rs1];
-    InstructionType type = classifyInstructions(currentInstruction.instruction);
-    switch (type) {
+    
+    switch (currentInstruction.instructionType) {
         case InstructionType::R:
             instructionRegisters.RB = registers[currentInstruction.rs2];
             break;
@@ -311,6 +318,9 @@ void Simulator::executeInstruction() {
                 result = instructionRegisters.RA + instructionRegisters.RB;
                 instructionRegisters.RY = result;
                 return;
+            } else if (name == "ld") {
+                logs[400] = "ld instruction not supported";
+                throw std::runtime_error("Error: ld instruction not supported");
             } else if (name == "jalr") {
                 result = PC;
                 PC = (instructionRegisters.RA + instructionRegisters.RB) & ~1;
@@ -386,7 +396,8 @@ void Simulator::executeInstruction() {
 
 void Simulator::memoryAccess() {
     uint32_t address = instructionRegisters.RY;
-
+    instructionRegisters.RZ = instructionRegisters.RY;
+    
     auto iTypeEncoding = ITypeInstructions::getEncoding();
     for (const auto &[name, op] : iTypeEncoding.opcodeMap) {
         if (op == currentInstruction.opcode && iTypeEncoding.func3Map.at(name) == currentInstruction.func3) {
@@ -429,18 +440,16 @@ void Simulator::memoryAccess() {
             return;
         }
     }
-    instructionRegisters.RZ = instructionRegisters.RY;
 }
 
 void Simulator::writeback() {
     if (currentInstruction.rd != 0) {
-        InstructionType type = classifyInstructions(currentInstruction.instruction);
-        switch (type) {
+        switch (currentInstruction.instructionType) {
             case InstructionType::R:
             case InstructionType::I:
             case InstructionType::U:
             case InstructionType::UJ:
-                registers[currentInstruction.rd] = instructionRegisters.RY;
+                registers[currentInstruction.rd] = instructionRegisters.RZ;
                 break;
             case InstructionType::S:
             case InstructionType::SB:
@@ -455,23 +464,33 @@ void Simulator::writeback() {
 
 bool Simulator::isValidAddress(uint32_t addr, uint32_t size) {
     if (addr + size > MEMORY_SIZE || addr + size < 0x0) {
-        logs[300] = "Memory is not Valid";
-        throw std::runtime_error("Error: Memory is not Valid");
+        std::stringstream ss;
+        ss << "Memory access error: Address 0x" << std::hex << addr << " with size " << std::dec << size 
+           << " is outside of valid memory range (0x0-0x" << std::hex << MEMORY_SIZE << ")";
+        logs[300] = ss.str();
+        throw std::runtime_error(ss.str());
     }
     return true;
 }
 
 bool Simulator::step() {
     if (!running) {
+        logs[400] = "Cannot step - simulator is not running";
         return false;
     }
 
     try {
+        std::stringstream log;
+        
         switch (currentInstruction.stage) {
             case Stage::FETCH:
                 fetchInstruction();
-                logs[200] = "Instruction is fetched current PC: 0x" + std::to_string(currentInstruction.PC);
+                log << "FETCH: Instruction fetched at PC: 0x" << std::hex << currentInstruction.PC 
+                         << ", Next PC: 0x" << PC 
+                         << ", Instruction: 0x" << std::hex << currentInstruction.instruction;
+                logs[200] = log.str();
                 if (!running) {
+                    logs[200] = "Program execution complete - reached end of instructions";
                     return false;
                 }
                 currentInstruction.stage = Stage::DECODE;
@@ -480,39 +499,114 @@ bool Simulator::step() {
 
             case Stage::DECODE:
                 decodeInstruction();
-                logs[200] = "Instruction is decoded";
+                log << "DECODE: Instruction at PC: 0x" << std::hex << currentInstruction.PC 
+                          << ", Opcode: 0x" << currentInstruction.opcode;
+                
+                if (currentInstruction.instructionType == InstructionType::R) {
+                    log << ", rs1: x" << std::dec << currentInstruction.rs1 
+                        << ", rs2: x" << currentInstruction.rs2
+                        << ", rd: x" << currentInstruction.rd;
+                } else if (currentInstruction.instructionType == InstructionType::I) {
+                    log << ", rs1: x" << std::dec << currentInstruction.rs1 
+                        << ", rd: x" << currentInstruction.rd
+                        << ", imm: 0x" << std::hex << instructionRegisters.RB;
+                } else if (currentInstruction.instructionType == InstructionType::S) {
+                    log << ", rs1: x" << std::dec << currentInstruction.rs1 
+                        << ", rs2: x" << currentInstruction.rs2
+                        << ", offset: 0x" << std::hex << instructionRegisters.RB;
+                } else if (currentInstruction.instructionType == InstructionType::SB) {
+                    log << ", rs1: x" << std::dec << currentInstruction.rs1 
+                        << ", rs2: x" << currentInstruction.rs2
+                        << ", branch offset: 0x" << std::hex << instructionRegisters.RB;
+                } else if (currentInstruction.instructionType == InstructionType::U) {
+                    log << ", rd: x" << std::dec << currentInstruction.rd
+                        << ", imm: 0x" << std::hex << instructionRegisters.RB;
+                } else if (currentInstruction.instructionType == InstructionType::UJ) {
+                    log << ", rd: x" << std::dec << currentInstruction.rd
+                        << ", jump offset: 0x" << std::hex << instructionRegisters.RB;
+                }
+                
+                logs[200] = log.str();
                 currentInstruction.stage = Stage::EXECUTE;
                 clockCycles += 1;
                 break;
 
             case Stage::EXECUTE:
                 executeInstruction();
-                logs[200] = "Instruction is executed";
+                log << "EXECUTE: Instruction at PC: 0x" << std::hex << currentInstruction.PC;
+                if (currentInstruction.instructionType == InstructionType::R || currentInstruction.instructionType == InstructionType::I) {
+                    log << ", RA: 0x" << instructionRegisters.RA
+                        << ", RB: 0x" << instructionRegisters.RB
+                        << ", Result: 0x" << instructionRegisters.RY;
+                } else if (currentInstruction.instructionType == InstructionType::S) {
+                    log << ", RA: 0x" << instructionRegisters.RA
+                        << ", Offset: 0x" << instructionRegisters.RB
+                        << ", RM: 0x" << instructionRegisters.RM
+                        << ", Address: 0x" << instructionRegisters.RY;
+                } else if (currentInstruction.instructionType == InstructionType::SB) {
+                    log << ", RA: 0x" << instructionRegisters.RA
+                        << ", RB: 0x" << instructionRegisters.RB
+                        << ", Branch " << (instructionRegisters.RY ? "taken" : "not taken");
+                } else if (currentInstruction.instructionType == InstructionType::U || currentInstruction.instructionType == InstructionType::UJ) {
+                    log << ", Imm: 0x" << instructionRegisters.RB
+                        << ", Result: 0x" << instructionRegisters.RY;
+                }
+                
+                logs[200] = log.str();
                 currentInstruction.stage = Stage::MEMORY;
                 clockCycles += 1;
                 break;
 
             case Stage::MEMORY:
                 memoryAccess();
-                logs[200] = "Memory is accessed checking whether to read, write or do nothing";
+                log << "MEMORY: Instruction at PC: 0x" << std::hex << currentInstruction.PC;
+
+                if (currentInstruction.instructionType == InstructionType::I) {
+                    if (currentInstruction.opcode == 0x03) {
+                        log << ", Load address: 0x" << instructionRegisters.RY
+                            << ", Data loaded: 0x" << instructionRegisters.RZ;
+                    } else {
+                        log << ", No memory access";
+                    }
+                } else if (currentInstruction.instructionType == InstructionType::S) {
+                    log << ", Store address: 0x" << instructionRegisters.RY
+                        << ", Value stored: 0x" << instructionRegisters.RM;
+                } else {
+                    log << ", No memory access";
+                }
+                
+                logs[200] = log.str();
                 currentInstruction.stage = Stage::WRITEBACK;
                 clockCycles += 1;
                 break;
 
             case Stage::WRITEBACK:
                 writeback();
-                logs[200] = "Instruction is written back to the register file";
+                log << "WRITEBACK: Instruction at PC: 0x" << std::hex << currentInstruction.PC;
+                
+                if (currentInstruction.rd != 0) {
+                    log << ", Writing 0x" << instructionRegisters.RZ << " to register x" << std::dec << currentInstruction.rd;
+                } else if (currentInstruction.instructionType == InstructionType::S) {
+                    log << ", Store instruction (no register write)";
+                } else if (currentInstruction.instructionType == InstructionType::SB) {
+                    log << ", Branch instruction (no register write)";
+                } else {
+                    log << ", No register write needed";
+                }
+                
+                logs[200] = log.str();
                 currentInstruction = Instruction();
                 instructionRegisters = InstructionRegisters();
                 clockCycles += 1;
                 break;
 
             default:
-                logs[404] = "Invalid pipeline stage Occurred";
+                logs[404] = "Invalid pipeline stage detected: " + std::to_string(static_cast<int>(currentInstruction.stage));
                 throw std::runtime_error("Error: Invalid pipeline stage");
         }
         return running;
     } catch (const std::runtime_error& e) {
+        logs[404] = "Runtime error during step execution: " + std::string(e.what());
         emscripten_log(EM_LOG_ERROR, "%s", e.what());
         running = false;
         return false;
@@ -521,15 +615,25 @@ bool Simulator::step() {
 
 void Simulator::run() {
     if (!running) {
+        logs[400] = "Cannot run - simulator is not running";
         return;
     }
 
+    logs[200] = "Starting full program execution";
+    int stepCount = 0;
     while (running) {
         if (!step()) {
             break;
         }
+        stepCount++;
+        if (stepCount > 100000) {
+            logs[400] = "Program execution terminated - exceeded maximum step count (100000)";
+            running = false;
+            break;
+        }
     }
-    logs[200] = "Simulation completed. Clock cycles: " + std::to_string(clockCycles);
+    logs[200] = "Simulation completed. Total instruction cycles: " + std::to_string(clockCycles) + 
+                ", Total steps executed: " + std::to_string(stepCount);
 }
 
 const uint32_t* Simulator::getRegisters() const { return registers; }
@@ -621,5 +725,7 @@ Stage Simulator::getCurrentStage() const { return currentInstruction.stage; }
 bool Simulator::isRunning() const { return running; }
 
 InstructionRegisters Simulator::getPipelineRegisters() const { return instructionRegisters; }
+
+uint32_t Simulator::getInstruction() const { return currentInstruction.instruction; };
 
 #endif

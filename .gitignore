@@ -3,6 +3,8 @@ input.asm
 /*.exe
 /*.mc
 /*.txt
+/*.cpp
+/*.hpp
 /.vscode/
 /src/temp.cpp
 /src/temp1.cpp

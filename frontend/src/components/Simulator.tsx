@@ -243,7 +243,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
         const addressNum = memoryStartIndex + index * 4;
         const address = addressNum.toString();
         const addressString = addressNum.toString(16).padStart(8, '0').toUpperCase();
-
+  
         if (addressNum >= parseInt(MEMORY_SEGMENTS.END, 16)) {
           return {
             address: "----------",
@@ -251,39 +251,53 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
             bytes: ["--", "--", "--", "--"]
           };
         }
-
+  
         let value = 0;
         let found = false;
-
+        let bytesDisplay = ["00", "00", "00", "00"];
+  
         if (addressNum >= 0x00000000 && addressNum <= 0x0FFFFFFC && textMap[address]) {
           value = textMap[address].first;
           found = true;
         }
         else if (addressNum >= 0x10000000 && addressNum <= 0x80000000) {
-          const byteAddresses = [addressNum, addressNum + 1, addressNum + 2, addressNum + 3];
-          const bytes = byteAddresses.map(addr => dataMap[addr] !== undefined ? dataMap[addr] : 0);
+          const byteAddresses = [
+            addressNum,
+            addressNum + 1,
+            addressNum + 2,
+            addressNum + 3
+          ];
+          const bytes = byteAddresses.map(addr => {
+            const addrStr = addr.toString();
+            return dataMap[addrStr] !== undefined ? dataMap[addrStr] : 0;
+          });
           if (bytes.some(b => b !== 0)) {
             found = true;
-            value = (bytes[3] << 24) | (bytes[2] << 16) | (bytes[1] << 8) | bytes[0];
+            value = (bytes[3] << 0) | (bytes[2] << 8) | (bytes[1] << 16) | (bytes[0] << 24);
+            bytesDisplay = [
+              bytes[3], bytes[2], bytes[1], bytes[0]
+            ].map(byte => {
+              const byteHex = byte.toString(16).padStart(2, '0').toUpperCase();
+              return isHex ? byteHex : byte.toString();
+            });
           }
         }
+        
         const valueHex = value.toString(16).padStart(8, '0').toUpperCase();
-        const bytesDisplay = found ? [
-          isHex ? valueHex.substring(0, 2) : Number.parseInt(valueHex.substring(0, 2), 16).toString(),
-          isHex ? valueHex.substring(2, 4) : Number.parseInt(valueHex.substring(2, 4), 16).toString(),
-          isHex ? valueHex.substring(4, 6) : Number.parseInt(valueHex.substring(4, 6), 16).toString(),
-          isHex ? valueHex.substring(6, 8) : Number.parseInt(valueHex.substring(6, 8), 16).toString()
-        ] : ["00", "00", "00", "00"];
-
+        
         return {
           address: addressString,
           value: valueHex,
-          bytes: bytesDisplay
+          bytes: found ? bytesDisplay : ["00", "00", "00", "00"]
         };
       });
       setMemoryEntries(entries);
     };
   }, [memoryStartIndex, isHex, textMap, dataMap]);
+
+  useEffect(()=>{
+    console.log(memoryEntries);
+  }, [memoryEntries]);
 
   const handleStep = useCallback(() => {
     simulatorInstance.step();
@@ -644,7 +658,8 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                     <div className="text-xs space-y-1">
                       <div>Current Stage: {!running ? "STANDBY" : stageToString(currentStage)}</div>
                       <div>Clock Cycles: {cycles ?? 0}</div>
-                      <div>IR: 0x{instruction.toString(16).toUpperCase().padStart(8, '0')}</div>
+                      <div>IR: 0x{textMap[instruction]?.first.toString(16).toUpperCase().padStart(8, '0') ?? '00000000'}</div>
+                      {/* <div>IR: 0x{instruction.toString(16).toUpperCase().padStart(8, '0')}</div> */}
                       <div>RZ: {`0x${(pipelineRegisters["RZ"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
                     </div>
                   </div>

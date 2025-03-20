@@ -115,7 +115,6 @@ public:
 
 private:
     Simulator sim;
-    std::string lastError;
 };
 
 EMSCRIPTEN_BINDINGS(simulator_module) {

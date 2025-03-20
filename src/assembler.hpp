@@ -391,7 +391,7 @@ bool Assembler::writeToFile(const std::string &filename) {
     for (const auto& [addr, value] : machineCode) {
         if (addr >= DATA_SEGMENT_START && addr < HEAP_SEGMENT_START) {
             outFile << "0x" << std::setw(8) << std::setfill('0') << addr << " 0x"
-                    << std::setw(8) << value << "\n";
+                    << std::setw(2) << value << "\n";
         }
     }
 

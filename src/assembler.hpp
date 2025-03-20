@@ -377,6 +377,8 @@ bool Assembler::writeToFile(const std::string &filename) {
         return false;
     }
 
+    outFile << std::hex;
+
     std::vector<std::pair<uint32_t, uint32_t>> sortedCode = machineCode;
     std::sort(sortedCode.begin(), sortedCode.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
 
@@ -502,7 +504,6 @@ int32_t Assembler::parseImmediate(const std::string &imm) const {
     } else {
         value = std::stoul(cleanImm, nullptr, 10);
     }
-
     return isNegative ? -static_cast<int32_t>(value) : static_cast<int32_t>(value);
 }
 

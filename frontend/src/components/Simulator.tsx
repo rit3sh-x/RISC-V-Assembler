@@ -47,6 +47,17 @@ type MemoryCell = {
   bytes: string[]
 }
 
+const toSignedDecimal = (value:number, bits = 32) => {
+  const maxPositive = Math.pow(2, bits - 1) - 1;
+  if (value > maxPositive) {
+    return value - Math.pow(2, bits);
+  }
+  return value;
+};
+
+const byteToSignedDecimal = (value:number) => toSignedDecimal(value, 8);
+const wordToSignedDecimal = (value:number) => toSignedDecimal(value, 32);
+
 const MEMORY_SEGMENTS = {
   CODE: "0x00000000",
   DATA: "0x10000000",
@@ -76,7 +87,7 @@ const MemoryTable = memo(({ entries }: { entries: MemoryCell[] }) => (
     <tbody>
       {entries.map((entry, index) => (
         <tr key={index} className="border-b hover:bg-gray-50">
-          <td className="py-2 px-4 font-mono">{entry.address === '----------'? entry.address : `0x${entry.address}`}</td>
+          <td className="py-2 px-4 font-mono">{entry.address === '----------' ? entry.address : `0x${entry.address}`}</td>
           <td className="py-2 px-4 font-mono">{entry.bytes[0]}</td>
           <td className="py-2 px-4 font-mono">{entry.bytes[1]}</td>
           <td className="py-2 px-4 font-mono">{entry.bytes[2]}</td>
@@ -88,14 +99,14 @@ const MemoryTable = memo(({ entries }: { entries: MemoryCell[] }) => (
 ));
 MemoryTable.displayName = "MemoryTable";
 
-const RegisterTable = memo(({ 
-  registers, 
-  registerStartIndex, 
-  isHex 
-}: { 
-  registers: number[], 
-  registerStartIndex: number, 
-  isHex: boolean 
+const RegisterTable = memo(({
+  registers,
+  registerStartIndex,
+  isHex
+}: {
+  registers: number[],
+  registerStartIndex: number,
+  isHex: boolean
 }) => (
   <table className="w-full text-sm table-fixed">
     <thead>
@@ -105,16 +116,26 @@ const RegisterTable = memo(({
       </tr>
     </thead>
     <tbody>
-      {registers.slice(registerStartIndex, registerStartIndex + ITEMS_PER_PAGE).map((reg, index) => (
-        <tr key={registerStartIndex + index} className="border-b hover:bg-gray-50">
-          <td className="py-2 px-3 font-mono">
-            {`x${registerStartIndex + index}`} <span className="text-gray-500">({REGISTER_ABI_NAMES[registerStartIndex + index]})</span>
-          </td>
-          <td className="py-2 px-3 font-mono">
-            {isHex ? `0x${reg.toString(16).padStart(8, '0')}` : reg}
-          </td>
-        </tr>
-      ))}
+      {registers.slice(registerStartIndex, registerStartIndex + ITEMS_PER_PAGE).map((reg, index) => {
+        let hexValue;
+        if (reg < 0) {
+          hexValue = (reg >>> 0).toString(16).padStart(8, '0');
+        } else {
+          hexValue = reg.toString(16).padStart(8, '0');
+        }
+        const decimalValue = wordToSignedDecimal(reg >>> 0);
+
+        return (
+          <tr key={registerStartIndex + index} className="border-b hover:bg-gray-50">
+            <td className="py-2 px-3 font-mono">
+              {`x${registerStartIndex + index}`} <span className="text-gray-500">({REGISTER_ABI_NAMES[registerStartIndex + index]})</span>
+            </td>
+            <td className="py-2 px-3 font-mono">
+              {isHex ? `0x${hexValue}` : decimalValue}
+            </td>
+          </tr>
+        );
+      })}
     </tbody>
   </table>
 ));
@@ -220,7 +241,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
 
   const updateSimulatorState = useCallback(() => {
     if (!simulatorInstance) return;
-    
+
     const newTerminal = simulatorInstance.getConsoleOutput();
     setTerminal(newTerminal);
     setRegisters(simulatorInstance.getRegisters());
@@ -277,14 +298,22 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
             bytesDisplay = [
               bytes[3], bytes[2], bytes[1], bytes[0]
             ].map(byte => {
-              const byteHex = byte.toString(16).padStart(2, '0').toUpperCase();
-              return isHex ? byteHex : byte.toString();
+              let byteValue = byte;
+              if (byteValue < 0) {
+                byteValue = byteValue & 0xFF;
+              }
+              const byteHex = byteValue.toString(16).padStart(2, '0').toUpperCase();
+              const byteDecimal = isHex ? byteHex : byteToSignedDecimal(byteValue);
+              return isHex ? byteHex : byteDecimal.toString();
             });
           }
         }
-        
-        const valueHex = value.toString(16).padStart(8, '0').toUpperCase();
-        
+        let valueHex;
+        if (value < 0) {
+          valueHex = (value >>> 0).toString(16).padStart(8, '0').toUpperCase();
+        } else {
+          valueHex = value.toString(16).padStart(8, '0').toUpperCase();
+        }
         return {
           address: addressString,
           value: valueHex,
@@ -294,10 +323,6 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
       setMemoryEntries(entries);
     };
   }, [memoryStartIndex, isHex, textMap, dataMap]);
-
-  useEffect(()=>{
-    console.log(memoryEntries);
-  }, [memoryEntries]);
 
   const handleStep = useCallback(() => {
     simulatorInstance.step();
@@ -471,7 +496,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                           Object.entries(textMap).map(([key, instruction]) => (
                             <tr
                               key={key}
-                              className={`hover:bg-gray-50 ${((currentStage === Stage.FETCH)&&(parseInt(key) === pc)) || ((currentStage !== Stage.FETCH)&&(parseInt(key) + 4 === pc)) ? "bg-blue-50" : ""} h-10`}
+                              className={`hover:bg-gray-50 ${((currentStage === Stage.FETCH) && (parseInt(key) === pc)) || ((currentStage !== Stage.FETCH) && (parseInt(key) + 4 === pc)) ? "bg-blue-50" : ""} h-10`}
                             >
                               <td className="py-2 px-3 font-mono whitespace-nowrap">
                                 0x{parseInt(key).toString(16).padStart(8, '0').toUpperCase()}
@@ -567,7 +592,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                       </div>
                     </div>
                     <div className="overflow-y-auto flex-1">
-                      <RegisterTable 
+                      <RegisterTable
                         registers={registers}
                         registerStartIndex={registerStartIndex}
                         isHex={isHex}
@@ -647,10 +672,10 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                   <div>
                     <h3 className="font-semibold mb-2">System Variables</h3>
                     <div className="text-xs space-y-1">
-                      <div>RA: {`0x${(pipelineRegisters["RA"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
-                      <div>RB: {`0x${(pipelineRegisters["RB"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
-                      <div>RM: {`0x${(pipelineRegisters["RM"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
-                      <div>RY: {`0x${(pipelineRegisters["RY"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
+                      <div>RA: {`0x${((pipelineRegisters["RA"] ?? 0) >>> 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
+                      <div>RB: {`0x${((pipelineRegisters["RB"] ?? 0) >>> 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
+                      <div>RM: {`0x${((pipelineRegisters["RM"] ?? 0) >>> 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
+                      <div>RY: {`0x${((pipelineRegisters["RY"] ?? 0) >>> 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
                     </div>
                   </div>
                   <div>
@@ -658,9 +683,10 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                     <div className="text-xs space-y-1">
                       <div>Current Stage: {!running ? "STANDBY" : stageToString(currentStage)}</div>
                       <div>Clock Cycles: {cycles ?? 0}</div>
-                      <div>IR: 0x{textMap[instruction]?.first.toString(16).toUpperCase().padStart(8, '0') ?? '00000000'}</div>
-                      {/* <div>IR: 0x{instruction.toString(16).toUpperCase().padStart(8, '0')}</div> */}
-                      <div>RZ: {`0x${(pipelineRegisters["RZ"] ?? 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
+                      <div>IR: 0x{textMap[instruction]?.first ?
+                        ((textMap[instruction].first) >>> 0).toString(16).toUpperCase().padStart(8, '0') :
+                        '00000000'}</div>
+                      <div>RZ: {`0x${((pipelineRegisters["RZ"] ?? 0) >>> 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
                     </div>
                   </div>
                 </div>

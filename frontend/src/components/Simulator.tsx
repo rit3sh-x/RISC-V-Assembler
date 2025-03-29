@@ -207,7 +207,7 @@ class SimulatorErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBo
 
 export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
   const [registers, setRegisters] = useState<number[]>(Array.from({ length: 32 }, () => 0));
-  const [pc, setPc] = useState<number>(0);
+  // const [pc, setPc] = useState<number>(0);
   const [cycles, setCycles] = useState<number>(0);
   const [dataMap, setDataMap] = useState<Record<string, number>>({});
   const [textMap, setTextMap] = useState<Record<string, { first: number, second: string }>>({});
@@ -245,7 +245,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
     const newTerminal = simulatorInstance.getConsoleOutput();
     setTerminal(newTerminal);
     setRegisters(simulatorInstance.getRegisters());
-    setPc(simulatorInstance.getPC());
+    // setPc(simulatorInstance.getPC());
     setCycles(simulatorInstance.getCycles());
     setDataMap(simulatorInstance.getDataMap());
     setTextMap(simulatorInstance.getTextMap());

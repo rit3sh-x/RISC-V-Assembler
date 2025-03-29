@@ -1,97 +1,92 @@
 #ifndef PARSER_HPP
 #define PARSER_HPP
 
-#include <iostream>
 #include <vector>
 #include <unordered_map>
 #include <stdexcept>
+#include <algorithm>
+#include <optional>
 #include <cstdint>
-#include "lexer.hpp"
 #include "types.hpp"
 
 using namespace riscv;
 
-struct SymbolEntry {
-    uint32_t address;
-    bool isString;
-    std::vector<uint64_t> numericValues;
-    std::string stringValue;
-    std::string directive;
-};
-
-struct ParsedInstruction {
-    std::string opcode;
-    std::vector<std::string> operands;
-    uint32_t address;
-
-    ParsedInstruction(std::string opc, std::vector<std::string> ops, uint32_t addr) : opcode(std::move(opc)), operands(std::move(ops)), address(addr) {}
-};
-
 class Parser {
 public:
-    explicit Parser(const std::vector<std::vector<Token>> &tokenizedLines) : tokens(tokenizedLines), errorCount(0), lastLabel("") {}
-    bool parse();
-    const std::unordered_map<std::string, SymbolEntry> &getSymbolTable() const { return symbolTable; }
-    const std::vector<ParsedInstruction> &getParsedInstructions() const { return parsedInstructions; }
-    bool hasErrors() const { return errorCount > 0; }
-    size_t getErrorCount() const { return errorCount; }
+    explicit Parser(const std::vector<std::vector<Token>>& tokenizedLines) 
+        : tokens(tokenizedLines), errorCount(0), currentAddress(0), 
+        inTextSection(false), inDataSection(false) {}
+    
+    inline bool parse();
+
+    inline const std::unordered_map<std::string, SymbolEntry>& getSymbolTable() const { return symbolTable; }
+    inline const std::vector<ParsedInstruction>& getParsedInstructions() const { return parsedInstructions; }
+
+    inline size_t getErrorCount() const { return errorCount; }
 
 private:
     const std::vector<std::vector<Token>> &tokens;
+
     std::unordered_map<std::string, SymbolEntry> symbolTable;
+
     std::vector<ParsedInstruction> parsedInstructions;
-    uint32_t currentAddress = 0;
-    bool inTextSection = false;
-    bool inDataSection = false;
-    mutable size_t errorCount = 0;
-    std::string lastLabel;
 
-    bool processFirstPass();
-    bool processSecondPass();
-    void handleDirective(const std::vector<Token> &line);
-    bool handleInstruction(const std::vector<Token>& line);
-    void addLabel(const std::string &label);
-    uint32_t resolveLabel(const std::string &label) const;
-    void reportError(const std::string &message, int lineNumber = 0) const;
-    int32_t getRegisterNumber(const std::string& reg) const;
-    int64_t parseImmediate(const std::string& imm) const;
+    mutable size_t errorCount;
 
-    void handleSectionDirective(const std::string& directive) {
-        if (directive == ".data") {
-            inDataSection = true;
-            inTextSection = false;
-            currentAddress = DATA_SEGMENT_START;
-        } else if (directive == ".text") {
-            inTextSection = true;
-            inDataSection = false;
-            currentAddress = TEXT_SEGMENT_START;
-        }
-    }
+    uint32_t currentAddress;
 
-    uint32_t getDirectiveSize(const std::string& directive) const {
-        auto it = directives.find(directive);
-        if (it != directives.end()) {
-            return it->second;
-        }
-        return 0;
-    }
+    bool inTextSection;
+    bool inDataSection;
 
-    friend class Assembler;
+    inline bool processFirstPass();
+    inline bool processSecondPass();
+    inline bool handleInstruction(const std::vector<Token>& line);
+
+    inline std::optional<uint32_t> resolveLabel(const std::string &label) const;
+
+    inline void addLabel(const std::string &label);
+    inline void handleDirective(const std::vector<Token> &line);
+    inline void reportError(const std::string &message, int lineNumber = 0) const;
+    inline void handleSectionDirective(const std::string& directive);
 };
 
-bool Parser::parse() {
+inline void Parser::handleSectionDirective(const std::string& directive) {
+    if (directive == ".data") {
+        inDataSection = true;
+        inTextSection = false;
+        currentAddress = DATA_SEGMENT_START;
+    } else if (directive == ".text") {
+        inTextSection = true;
+        inDataSection = false;
+        currentAddress = TEXT_SEGMENT_START;
+    }
+}
+
+inline bool Parser::parse() {
     if (tokens.empty()) {
         reportError("No tokens provided for parsing");
         return false;
     }
-    return processFirstPass() && processSecondPass() && !hasErrors();
+    
+    parsedInstructions.clear();
+    bool firstPassResult = processFirstPass();
+    if (!firstPassResult) {
+        logs[404] = "First pass failed with " + std::to_string(errorCount) + " errors";
+        return false;
+    }
+    
+    bool secondPassResult = processSecondPass();
+    if (!secondPassResult) {
+        logs[404] = "Second pass failed with " + std::to_string(errorCount) + " errors";
+        return false;
+    }
+    return errorCount == 0;
 }
 
-bool Parser::processFirstPass() {
+inline bool Parser::processFirstPass() {
     currentAddress = TEXT_SEGMENT_START;
     inTextSection = true;
     inDataSection = false;
-    lastLabel.clear();
     symbolTable.clear();
 
     for (const auto &line : tokens) {
@@ -113,9 +108,7 @@ bool Parser::processFirstPass() {
                     dataPathTokens.push_back(currentToken);
                     tokenIndex++;
 
-                    while (tokenIndex < line.size() && (line[tokenIndex].type == TokenType::DIRECTIVE || 
-                                                       line[tokenIndex].type == TokenType::IMMEDIATE || 
-                                                       line[tokenIndex].type == TokenType::STRING)) {
+                    while (tokenIndex < line.size() && (line[tokenIndex].type == TokenType::DIRECTIVE || line[tokenIndex].type == TokenType::IMMEDIATE || line[tokenIndex].type == TokenType::STRING)) {
                         dataPathTokens.push_back(line[tokenIndex]);
                         tokenIndex++;
                     }
@@ -138,10 +131,70 @@ bool Parser::processFirstPass() {
             }
         }
     }
-    return !hasErrors();
+    return errorCount == 0;
 }
 
-void Parser::handleDirective(const std::vector<Token> &line) {
+inline bool Parser::processSecondPass() {
+    currentAddress = TEXT_SEGMENT_START;
+    inTextSection = true;
+    inDataSection = false;
+    parsedInstructions.clear();
+
+    for (const auto &line : tokens) {
+        if (line.empty()) continue;
+
+        if (line[0].type == TokenType::DIRECTIVE) {
+            handleSectionDirective(line[0].value);
+            continue;
+        }
+
+        size_t tokenIndex = 0;
+        while (tokenIndex < line.size()) {
+            const Token &currentToken = line[tokenIndex];
+
+            if (currentToken.type == TokenType::LABEL && inTextSection) {
+                tokenIndex++;
+
+                if (tokenIndex < line.size() && line[tokenIndex].type == TokenType::OPCODE) {
+                    std::vector<Token> instructionTokens;
+                    while (tokenIndex < line.size() && line[tokenIndex].type != TokenType::DIRECTIVE && 
+                          line[tokenIndex].type != TokenType::LABEL) {
+                        instructionTokens.push_back(line[tokenIndex]);
+                        tokenIndex++;
+                    }
+
+                    if (!handleInstruction(instructionTokens)) {
+                        reportError("Invalid instruction following label '" + currentToken.value + "'", line[0].lineNumber);
+                    }
+                    else {
+                        currentAddress += INSTRUCTION_SIZE;
+                    }
+                }
+            }
+            else if (currentToken.type == TokenType::OPCODE) {
+                std::vector<Token> instructionTokens;
+                while (tokenIndex < line.size() && line[tokenIndex].type != TokenType::DIRECTIVE && 
+                      line[tokenIndex].type != TokenType::LABEL) {
+                    instructionTokens.push_back(line[tokenIndex]);
+                    tokenIndex++;
+                }
+
+                if (!handleInstruction(instructionTokens)) {
+                    reportError("Invalid instruction", line[0].lineNumber);
+                }
+                else {
+                    currentAddress += INSTRUCTION_SIZE;
+                }
+            }
+            else {
+                tokenIndex++;
+            }
+        }
+    }
+    return errorCount == 0;
+}
+
+inline void Parser::handleDirective(const std::vector<Token> &line) {
     if (line.empty()) {
         reportError("Empty directive encountered", 0);
         return;
@@ -256,83 +309,12 @@ void Parser::handleDirective(const std::vector<Token> &line) {
     }
 }
 
-void Parser::addLabel(const std::string &label) {
+inline void Parser::addLabel(const std::string &label) {
     auto [it, inserted] = symbolTable.emplace(label, SymbolEntry{currentAddress, false, {}, "", ""});
     if (!inserted) reportError("Duplicate label '" + label + "'");
 }
 
-bool Parser::processSecondPass() {
-    currentAddress = TEXT_SEGMENT_START;
-    inTextSection = true;
-    inDataSection = false;
-    parsedInstructions.clear();
-    lastLabel.clear();
-
-    for (const auto &line : tokens) {
-        if (line.empty()) continue;
-
-        if (line[0].type == TokenType::DIRECTIVE) {
-            if (line[0].value == ".data") {
-                inDataSection = true;
-                inTextSection = false;
-                currentAddress = DATA_SEGMENT_START;
-            }
-            else if (line[0].value == ".text") {
-                inTextSection = true;
-                inDataSection = false;
-                currentAddress = TEXT_SEGMENT_START;
-            }
-            continue;
-        }
-
-        size_t tokenIndex = 0;
-        while (tokenIndex < line.size()) {
-            const Token &currentToken = line[tokenIndex];
-
-            if (currentToken.type == TokenType::LABEL && inTextSection) {
-                lastLabel = currentToken.value;
-                tokenIndex++;
-
-                if (tokenIndex < line.size() && line[tokenIndex].type == TokenType::OPCODE) {
-                    std::vector<Token> instructionTokens;
-                    while (tokenIndex < line.size() && line[tokenIndex].type != TokenType::DIRECTIVE && 
-                          line[tokenIndex].type != TokenType::LABEL) {
-                        instructionTokens.push_back(line[tokenIndex]);
-                        tokenIndex++;
-                    }
-
-                    if (!handleInstruction(instructionTokens)) {
-                        reportError("Invalid instruction following label '" + currentToken.value + "'", line[0].lineNumber);
-                    }
-                    else {
-                        currentAddress += INSTRUCTION_SIZE;
-                    }
-                }
-            }
-            else if (currentToken.type == TokenType::OPCODE) {
-                std::vector<Token> instructionTokens;
-                while (tokenIndex < line.size() && line[tokenIndex].type != TokenType::DIRECTIVE && 
-                      line[tokenIndex].type != TokenType::LABEL) {
-                    instructionTokens.push_back(line[tokenIndex]);
-                    tokenIndex++;
-                }
-
-                if (!handleInstruction(instructionTokens)) {
-                    reportError("Invalid instruction", line[0].lineNumber);
-                }
-                else {
-                    currentAddress += INSTRUCTION_SIZE;
-                }
-            }
-            else {
-                tokenIndex++;
-            }
-        }
-    }
-    return !hasErrors();
-}
-
-bool Parser::handleInstruction(const std::vector<Token>& line) {
+inline bool Parser::handleInstruction(const std::vector<Token>& line) {
     if (line.empty()) {
         reportError("Empty instruction encountered", 0);
         return false;
@@ -415,7 +397,7 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
         }
         
         if (isStore && i == 1) {
-            if (!Lexer::isRegister(token.value)) {
+            if (!isRegister(token.value)) {
                 reportError("First operand of store instruction must be a register", line[0].lineNumber);
                 return false;
             }
@@ -426,7 +408,7 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
 
         if (isMemoryOp && ((isStore && i == 2) || (!isStore && i == 2))) {
             std::string offset, reg;
-            if (Lexer::isMemory(token.value, offset, reg)) {
+            if (isMemory(token.value, offset, reg)) {
                 foundMemoryFormat = true;
                 try {
                     int32_t regNum = getRegisterNumber(reg);
@@ -497,7 +479,7 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                     }
                     operands.push_back(token.value);
                 } catch (const std::exception& e) {
-                    if (isMemoryOp && !foundMemoryFormat && Lexer::isRegister(token.value)) {
+                    if (isMemoryOp && !foundMemoryFormat && isRegister(token.value)) {
                         operands.push_back(token.value);
                     } else {
                         reportError("Invalid immediate value: " + token.value + " - " + e.what(), line[0].lineNumber);
@@ -507,11 +489,11 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                 break;
             }
             case TokenType::LABEL: {
-                uint32_t labelAddress = resolveLabel(token.value);
+                auto labelAddress = resolveLabel(token.value);
                 if (labelAddress == static_cast<uint32_t>(-1)) return false;
                 
                 if (isBranch || isUJType || opcode == "j") {
-                    int32_t offset = static_cast<int32_t>(labelAddress - currentAddress);
+                    int32_t offset = static_cast<int32_t>(*labelAddress - currentAddress);
                     if (isBranch && (offset < -4096 || offset > 4095 || (offset & 1))) {
                         reportError("Branch target out of range or misaligned: " + token.value, line[0].lineNumber);
                         return false;
@@ -521,17 +503,17 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                     }
                     operands.push_back(std::to_string(offset));
                 } else {
-                    operands.push_back(std::to_string(labelAddress));
+                    operands.push_back(std::to_string(*labelAddress));
                 }
                 break;
             }
             case TokenType::UNKNOWN: {
                 if (symbolTable.find(token.value) != symbolTable.end()) {
-                    uint32_t labelAddress = resolveLabel(token.value);
+                    auto labelAddress = resolveLabel(token.value);
                     if (labelAddress == static_cast<uint32_t>(-1)) return false;
                     
                     if (isBranch || isUJType || opcode == "j") {
-                        int32_t offset = static_cast<int32_t>(labelAddress - currentAddress);
+                        int32_t offset = static_cast<int32_t>(*labelAddress - currentAddress);
                         if (isBranch && (offset < -4096 || offset > 4095 || (offset & 1))) {
                             reportError("Branch target out of range or misaligned: " + token.value, line[0].lineNumber);
                             return false;
@@ -541,9 +523,9 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
                         }
                         operands.push_back(std::to_string(offset));
                     } else {
-                        operands.push_back(std::to_string(labelAddress));
+                        operands.push_back(std::to_string(*labelAddress));
                     }
-                } else if (Lexer::isRegister(token.value)) {
+                } else if (isRegister(token.value)) {
                     operands.push_back(token.value);
                 } else {
                     reportError("Invalid operand or undefined label '" + token.value + "' in instruction", line[0].lineNumber);
@@ -564,7 +546,7 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
             reportError("Missing base register in memory operation", line[0].lineNumber);
             return false;
         }
-        if (!Lexer::isRegister(operands.back())) {
+        if (!isRegister(operands.back())) {
             reportError("Invalid base register in memory operation: " + operands.back(), line[0].lineNumber);
             return false;
         }
@@ -580,102 +562,30 @@ bool Parser::handleInstruction(const std::vector<Token>& line) {
     return true;
 }
 
-uint32_t Parser::resolveLabel(const std::string &label) const {
+inline std::optional<uint32_t> Parser::resolveLabel(const std::string &label) const {
     if (label.empty()) {
         reportError("Empty label encountered");
-        return static_cast<uint32_t>(-1);
+        return std::nullopt;
     }
     
     auto it = symbolTable.find(label);
     if (it != symbolTable.end()) {
         return it->second.address;
     }
+    
     reportError("Undefined label '" + label + "'");
-    return static_cast<uint32_t>(-1);
+    return std::nullopt;
 }
 
-void Parser::reportError(const std::string &message, int lineNumber) const {
+inline void Parser::reportError(const std::string &message, int lineNumber) const {
+    std::string errorMsg;
     if (lineNumber > 0) {
-        std::cerr << "Parser Error on Line " << lineNumber << ": " << message << "\n";
+        errorMsg = "Parser Error on Line " + std::to_string(lineNumber) + ": " + message;
     } else {
-        std::cerr << "Parser Error: " << message << "\n";
+        errorMsg = "Parser Error: " + message;
     }
+    logs[404] = errorMsg;
     ++errorCount;
-}
-
-int32_t Parser::getRegisterNumber(const std::string& reg) const {
-    if (reg.empty()) {
-        reportError("Empty register name");
-        return -1;
-    }
-
-    std::string cleanReg = reg;
-    cleanReg.erase(std::remove_if(cleanReg.begin(), cleanReg.end(), ::isspace), cleanReg.end());
-    std::string lowerReg = cleanReg;
-    std::transform(lowerReg.begin(), lowerReg.end(), lowerReg.begin(), ::tolower);
-    
-    auto it = riscv::validRegisters.find(lowerReg);
-    if (it != riscv::validRegisters.end()) {
-        return it->second;
-    }
-    
-    if (lowerReg[0] == 'x' && lowerReg.length() > 1) {
-        try {
-            int num = std::stoi(lowerReg.substr(1));
-            if (num >= 0 && num <= 31) {
-                return num;
-            }
-        } catch (...) {}
-    }
-    
-    reportError("Invalid register name: " + reg);
-    return -1;
-}
-
-int64_t Parser::parseImmediate(const std::string& imm) const {
-    try {
-        std::string cleanImm = Lexer::trim(imm);
-        if (cleanImm.empty()) {
-            reportError("Empty immediate value");
-            return 0;
-        }
-
-        bool isNegative = cleanImm[0] == '-';
-        if (isNegative) {
-            cleanImm = cleanImm.substr(1);
-            if (cleanImm.empty()) {
-                reportError("Invalid immediate value: just a negative sign");
-                return 0;
-            }
-        }
-
-        uint64_t value = 0;
-        if (cleanImm.length() > 2 && cleanImm[0] == '0') {
-            char format = ::tolower(cleanImm[1]);
-            if (format == 'x') {
-                if (cleanImm.length() <= 2) {
-                    reportError("Invalid hexadecimal format: missing digits after '0x'");
-                    return 0;
-                }
-                value = std::stoull(cleanImm, nullptr, 16);
-            } else if (format == 'b') {
-                if (cleanImm.length() <= 2) {
-                    reportError("Invalid binary format: missing digits after '0b'");
-                    return 0;
-                }
-                value = std::stoull(cleanImm.substr(2), nullptr, 2);
-            } else {
-                value = std::stoull(cleanImm, nullptr, 10);
-            }
-        } else {
-            value = std::stoull(cleanImm, nullptr, 10);
-        }
-        return isNegative ? -static_cast<int64_t>(value) : static_cast<int64_t>(value);
-    } catch (const std::exception& e) {
-        std::string errorMsg = "Invalid immediate value '" + imm + "': " + e.what();
-        reportError(errorMsg);
-        throw std::runtime_error(errorMsg);
-    }
 }
 
 #endif

@@ -493,19 +493,19 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {Object.keys(textMap).length > 0 ? (
-                          Object.entries(textMap).map(([key, instruction]) => (
+                          Object.entries(textMap).map(([key, instObj]) => (
                             <tr
                               key={key}
-                              className={`hover:bg-gray-50 ${((currentStage === Stage.FETCH) && (parseInt(key) === pc)) || ((currentStage !== Stage.FETCH) && (parseInt(key) + 4 === pc)) ? "bg-blue-50" : ""} h-10`}
+                              className={`hover:bg-gray-50 ${(parseInt(key) === instruction) ? "bg-blue-50" : ""} h-10`}
                             >
                               <td className="py-2 px-3 font-mono whitespace-nowrap">
                                 0x{parseInt(key).toString(16).padStart(8, '0').toUpperCase()}
                               </td>
                               <td className="py-2 px-3 font-mono whitespace-nowrap">
-                                0x{instruction.first.toString(16).padStart(8, '0').toUpperCase()}
+                                0x{instObj.first.toString(16).padStart(8, '0').toUpperCase()}
                               </td>
                               <td className="py-2 px-3 font-mono whitespace-nowrap">
-                                {instruction.second}
+                                {instObj.second}
                               </td>
                             </tr>
                           ))
@@ -683,7 +683,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                     <div className="text-xs space-y-1">
                       <div>Current Stage: {!running ? "STANDBY" : stageToString(currentStage)}</div>
                       <div>Clock Cycles: {cycles ?? 0}</div>
-                      <div>IR: 0x{textMap[instruction]?.first ?
+                      <div>IR: 0x{(textMap[instruction]?.first && running) ?
                         ((textMap[instruction].first) >>> 0).toString(16).toUpperCase().padStart(8, '0') :
                         '00000000'}</div>
                       <div>RZ: {`0x${((pipelineRegisters["RZ"] ?? 0) >>> 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>

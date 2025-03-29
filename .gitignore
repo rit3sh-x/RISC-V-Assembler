@@ -1,5 +1,6 @@
 directions.txt
 input.asm
+/phase3
 /*.exe
 /*.mc
 /*.txt
@@ -15,6 +16,6 @@ quick_sort.asm
 /instruction_execution
 /wasm/*
 inst.txt
-main.cpp
 /test
 /wasm
+/frontend/public/wasm/test

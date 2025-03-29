@@ -98,7 +98,21 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
     node->rs2 = (node->instruction >> 20) & 0x1F;
     node->func7 = (node->instruction >> 25) & 0x7F;
 
-    instructionRegisters.RA = registers[node->rs1];
+    switch (node->instructionType) {
+        case InstructionType::R:
+        case InstructionType::I:
+        case InstructionType::S:
+        case InstructionType::SB:
+            instructionRegisters.RA = registers[node->rs1];
+            break;
+        case InstructionType::U:
+        case InstructionType::UJ:
+            instructionRegisters.RA = 0;
+            break;
+        default:
+            instructionRegisters.RA = 0;
+            break;
+    }
     
     switch (node->instructionType) {
         case InstructionType::R:
@@ -159,38 +173,34 @@ inline void decodeInstructionWithForwarding(InstructionNode* node, InstructionRe
     node->rs1 = rs1;
     node->rs2 = rs2;
 
-    if (opcode == 0x33) {
-        node->instructionType = InstructionType::R;
-    } else if (opcode == 0x13 || opcode == 0x03 || opcode == 0x67) {
-        node->instructionType = InstructionType::I;
-    } else if (opcode == 0x23) {
-        node->instructionType = InstructionType::S;
-    } else if (opcode == 0x63) {
-        node->instructionType = InstructionType::SB;
-    } else if (opcode == 0x37 || opcode == 0x17) {
-        node->instructionType = InstructionType::U;
-    } else if (opcode == 0x6F) {
-        node->instructionType = InstructionType::UJ;
-    }
-
-    if (rs1 != 0) {
-        if (dataForwarding && rs1 == regs.RZ) {
-            regs.RA = regs.RY;
+    if (node->instructionType == InstructionType::R || 
+        node->instructionType == InstructionType::I || 
+        node->instructionType == InstructionType::S || 
+        node->instructionType == InstructionType::SB) {
+        
+        if (rs1 != 0) {
+            if (dataForwarding && rs1 == regs.RZ) {
+                regs.RA = regs.RY;
+            } else {
+                regs.RA = registers[rs1];
+            }
         } else {
-            regs.RA = registers[rs1];
+            regs.RA = 0;
         }
     } else {
         regs.RA = 0;
     }
-    
-    if (rs2 != 0) {
-        if (dataForwarding && rs2 == regs.RZ) {
-            regs.RB = regs.RY;
+
+    if (node->instructionType == InstructionType::R) {
+        if (rs2 != 0) {
+            if (dataForwarding && rs2 == regs.RZ) {
+                regs.RB = regs.RY;
+            } else {
+                regs.RB = registers[rs2];
+            }
         } else {
-            regs.RB = registers[rs2];
+            regs.RB = 0;
         }
-    } else {
-        regs.RB = 0;
     }
 }
 

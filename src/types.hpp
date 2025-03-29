@@ -21,7 +21,9 @@ namespace riscv {
     inline constexpr int MAX_STEPS = 100000;
 
     enum class Stage { FETCH, DECODE, EXECUTE, MEMORY, WRITEBACK };
+    
     enum class InstructionType { R, I, S, SB, U, UJ };
+
     enum TokenType {
         OPCODE,
         REGISTER,
@@ -117,6 +119,7 @@ namespace riscv {
         uint32_t branchMispredictions;
         uint32_t dataHazardStalls;
         uint32_t controlHazardStalls;
+        uint32_t pipelineFlushes;
 
         bool enablePipeline;
         bool enableDataForwarding;
@@ -129,7 +132,7 @@ namespace riscv {
             : cyclesPerInstruction(0.0), totalCycles(0), instructionsExecuted(0),
               dataTransferInstructions(0), aluInstructions(0), controlInstructions(0),
               stallBubbles(0), dataHazards(0), controlHazards(0), branchMispredictions(0),
-              dataHazardStalls(0), controlHazardStalls(0),
+              dataHazardStalls(0), controlHazardStalls(0), pipelineFlushes(0),
               enablePipeline(false), enableDataForwarding(false),
               printRegisterFile(false), printPipelineInfo(false),
               followSpecificInstruction(UINT32_MAX), printBranchPrediction(false) {}

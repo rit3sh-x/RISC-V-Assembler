@@ -14,8 +14,6 @@ merge_sort.asm
 quick_sort.asm
 /pipeline
 /instruction_execution
-/wasm/*
 inst.txt
 /test
-/wasm
 /frontend/public/wasm/test

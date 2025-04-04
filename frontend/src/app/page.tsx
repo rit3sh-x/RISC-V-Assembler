@@ -9,6 +9,6 @@ const Landing = dynamic(
 
 export default function Home() {
   return (
-    <Landing />
+      <Landing/>
   );
 }

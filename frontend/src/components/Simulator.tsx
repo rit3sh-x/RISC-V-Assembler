@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, memo } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { RefreshCw, Play, StepForward, ChevronUp, ChevronDown, Hash, SquareCode } from "lucide-react"
-import type { Simulator } from "@/types/simulator";
+import type { Simulator as SimulatorType } from "@/types/simulator"
 import {
   Dialog,
   DialogContent,
@@ -12,33 +12,56 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog"
+import type { SimulationControls } from "@/components/Landing";
 
 const ITEMS_PER_PAGE = 10
 
 enum Stage {
-  FETCH,
-  DECODE,
-  EXECUTE,
-  MEMORY,
-  WRITEBACK,
+  FETCH = 0,
+  DECODE = 1,
+  EXECUTE = 2,
+  MEMORY = 3,
+  WRITEBACK = 4
+}
+
+class InstructionRegisters {
+  RA: number;
+  RB: number;
+  RM: number;
+  RY: number;
+  RZ: number;
+
+  constructor(RA = 0, RB = 0, RM = 0, RY = 0, RZ = 0) {
+    this.RA = RA;
+    this.RB = RB;
+    this.RM = RM;
+    this.RY = RY;
+    this.RZ = RZ;
+  }
 }
 
 interface SimulatorProps {
   text: string;
-  simulatorInstance: Simulator;
+  simulatorInstance: SimulatorType;
+  controls: SimulationControls;
+  onSidebarOpenChange: (open: boolean) => void;
+  onRunningChange: (running: boolean) => void;
 }
 
-interface PipelineStageStatus {
-  status: string;
-  color: string;
-}
+const StageNames = {
+  [Stage.FETCH]: 'FETCH',
+  [Stage.DECODE]: 'DECODE',
+  [Stage.EXECUTE]: 'EXECUTE',
+  [Stage.MEMORY]: 'MEMORY',
+  [Stage.WRITEBACK]: 'WRITEBACK'
+};
 
-const PipelineStatus: Record<Stage, PipelineStageStatus> = {
-  [Stage.FETCH]: { status: "Idle", color: "#60A5FA" },
-  [Stage.DECODE]: { status: "Idle", color: "#34D399" },
-  [Stage.EXECUTE]: { status: "Idle", color: "#F59E0B" },
-  [Stage.MEMORY]: { status: "Idle", color: "#EC4899" },
-  [Stage.WRITEBACK]: { status: "Idle", color: "#8B5CF6" },
+const StageColors: Record<string, string> = {
+  "FETCH": "#60A5FA",
+  "DECODE": "#34D399",
+  "EXECUTE": "#F59E0B",
+  "MEMORY": "#EC4899",
+  "WRITEBACK": "#8B5CF6",
 };
 
 type MemoryCell = {
@@ -141,25 +164,34 @@ const RegisterTable = memo(({
 ));
 RegisterTable.displayName = "RegisterTable";
 
-const PipelineStages = memo(({ currentStage, running }: { currentStage: Stage, running: boolean }) => (
-  <div className="grid grid-cols-5 gap-2 mb-4">
-    {Object.keys(PipelineStatus).map((stageKey) => {
-      const stage = Number(stageKey) as Stage;
-      const { color } = PipelineStatus[stage];
-      const status = stage === currentStage ? "Active" : "Idle";
-      return (
-        <div
-          key={Stage[stage]}
-          className={`p-2 border rounded ${(currentStage === stage && running) ? "opacity-100" : "opacity-30"}`}
-          style={{ backgroundColor: color }}
-        >
-          <div className="font-semibold text-white">{Stage[stage]}</div>
-          <div className="text-xs text-white/90">{status}</div>
+const PipelineStages = memo(({ activeStates, running }: { 
+  activeStates: Record<number, { active: boolean, instruction: number }>, 
+  running: boolean 
+}) => {
+  const stageEntries = Object.entries(StageNames).map(([stageNumStr, stageName]) => {
+    const stageNum = parseInt(stageNumStr);
+    const stageState = activeStates[stageNum] || { active: false, instruction: 0 };
+    
+    return (
+      <div
+        key={stageName}
+        className={`p-2 border rounded ${(stageState.active && running) ? "opacity-100" : "opacity-30"}`}
+        style={{ backgroundColor: StageColors[stageName] }}
+      >
+        <div className="font-semibold text-white">{stageName}</div>
+        <div className="text-xs text-white/90">
+          {stageState.active ? "Active" : "Idle"}
         </div>
-      );
-    })}
-  </div>
-));
+      </div>
+    );
+  });
+
+  return (
+    <div className="grid grid-cols-5 gap-2 mb-4">
+      {stageEntries}
+    </div>
+  );
+});
 PipelineStages.displayName = "PipelineStages";
 
 interface ErrorBoundaryProps {
@@ -205,18 +237,35 @@ class SimulatorErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBo
   }
 }
 
-export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
+interface TextMapEntry {
+  first: number;
+  second: string;
+}
+
+export default function Simulator({ 
+  text, 
+  simulatorInstance, 
+  controls, 
+  onSidebarOpenChange,
+  onRunningChange 
+}: SimulatorProps) {
   const [registers, setRegisters] = useState<number[]>(Array.from({ length: 32 }, () => 0));
-  // const [pc, setPc] = useState<number>(0);
   const [cycles, setCycles] = useState<number>(0);
   const [dataMap, setDataMap] = useState<Record<string, number>>({});
   const [textMap, setTextMap] = useState<Record<string, { first: number, second: string }>>({});
   const [terminal, setTerminal] = useState<Record<string, string>>({});
   const [running, setRunning] = useState<boolean>(false);
-  const [currentStage, setCurrentStage] = useState<Stage>(Stage.FETCH);
-  const [pipelineRegisters, setPipelineRegisters] = useState<Record<string, number>>({});
+  const [activeStates, setActiveStates] = useState<Record<number, { active: boolean, instruction: number }>>({
+    [Stage.FETCH]: { active: false, instruction: 0 },
+    [Stage.DECODE]: { active: false, instruction: 0 },
+    [Stage.EXECUTE]: { active: false, instruction: 0 },
+    [Stage.MEMORY]: { active: false, instruction: 0 },
+    [Stage.WRITEBACK]: { active: false, instruction: 0 }
+  });
+  const [pipelineRegisters, setPipelineRegisters] = useState<InstructionRegisters>(new InstructionRegisters());
   const [isHex, setIsHex] = useState<boolean>(true);
   const [instruction, setInstruction] = useState<number>(0);
+  const [stalls, setStalls] = useState<number>(0);
 
   const [memoryStartIndex, setMemoryStartIndex] = useState<number>(0);
   const [memoryEntries, setMemoryEntries] = useState<MemoryCell[]>([]);
@@ -238,21 +287,21 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
       simulatorInstance.reset();
     }
   }, [simulatorInstance]);
-
+  
   const updateSimulatorState = useCallback(() => {
     if (!simulatorInstance) return;
 
-    const newTerminal = simulatorInstance.getConsoleOutput();
+    const newTerminal = simulatorInstance.getLogs();
     setTerminal(newTerminal);
     setRegisters(simulatorInstance.getRegisters());
-    // setPc(simulatorInstance.getPC());
     setCycles(simulatorInstance.getCycles());
     setDataMap(simulatorInstance.getDataMap());
     setTextMap(simulatorInstance.getTextMap());
-    setCurrentStage(simulatorInstance.getCurrentStage());
+    setStalls(simulatorInstance.getStalls());
+    setActiveStates(simulatorInstance.getActiveStages());
     setRunning(simulatorInstance.isRunning());
-    setPipelineRegisters(simulatorInstance.getPipelineRegisters());
-    setInstruction(simulatorInstance.getInstruction());
+    setPipelineRegisters(simulatorInstance.getInstructionRegisters());
+    setInstruction(simulatorInstance.getPC());
     if (newTerminal["404"]) {
       setTimeout(() => showTerminalErrorDialog(newTerminal["404"]), 0);
     }
@@ -353,22 +402,21 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
     memoizedUpdateMemoryEntries();
   }, [memoizedUpdateMemoryEntries]);
 
-  const stageToString = (stage: Stage) => {
-    switch (stage) {
-      case Stage.FETCH:
-        return "FETCH";
-      case Stage.DECODE:
-        return "DECODE";
-      case Stage.EXECUTE:
-        return "EXECUTE";
-      case Stage.MEMORY:
-        return "MEMORY";
-      case Stage.WRITEBACK:
-        return "WRITEBACK";
-      default:
-        return "STANDBY";
+  useEffect(() => {
+    if (running) {
+      onSidebarOpenChange(false);
     }
-  };
+    onRunningChange(running);
+  }, [running, onSidebarOpenChange, onRunningChange]);
+
+  useEffect(() => {
+    if (!simulatorInstance) return;
+    simulatorInstance.setEnvironment(
+      controls.pipelining,
+      controls.dataForwarding
+    );
+    updateSimulatorState();
+  }, [controls.pipelining, controls.dataForwarding, simulatorInstance, updateSimulatorState]);
 
   const navigateMemoryUp = () => {
     setMemoryStartIndex(prev => Math.max(0, prev - ITEMS_PER_PAGE * 4));
@@ -493,22 +541,40 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {Object.keys(textMap).length > 0 ? (
-                          Object.entries(textMap).map(([key, instObj]) => (
-                            <tr
-                              key={key}
-                              className={`hover:bg-gray-50 ${(parseInt(key) === instruction) ? "bg-blue-50" : ""} h-10`}
-                            >
-                              <td className="py-2 px-3 font-mono whitespace-nowrap">
-                                0x{parseInt(key).toString(16).padStart(8, '0').toUpperCase()}
-                              </td>
-                              <td className="py-2 px-3 font-mono whitespace-nowrap">
-                                0x{instObj.first.toString(16).padStart(8, '0').toUpperCase()}
-                              </td>
-                              <td className="py-2 px-3 font-mono whitespace-nowrap">
-                                {instObj.second}
-                              </td>
-                            </tr>
-                          ))
+                          Object.entries(textMap as Record<string, TextMapEntry>).map(([key, instObj]) => {
+                            const instructionAddress = parseInt(key);
+                            let highlightColor = "";
+                            Object.entries(activeStates).forEach(([stageKey, stageInfo]) => {
+                              if (stageInfo.active && stageInfo.instruction === instructionAddress) {
+                                const stageNum = parseInt(stageKey) as Stage;
+                                const stageName = StageNames[stageNum];
+                                highlightColor = StageColors[stageName];
+                              }
+                            });
+                            
+                            return (
+                              <tr key={key} className="hover:bg-gray-50 h-10">
+                                <td 
+                                  className="py-2 px-3 font-mono whitespace-nowrap"
+                                  style={{ backgroundColor: highlightColor, color: highlightColor ? "white" : "inherit" }}
+                                >
+                                  0x{instructionAddress.toString(16).padStart(8, '0').toUpperCase()}
+                                </td>
+                                <td 
+                                  className="py-2 px-3 font-mono whitespace-nowrap"
+                                  style={{ backgroundColor: highlightColor, color: highlightColor ? "white" : "inherit" }}
+                                >
+                                  0x{instObj.first.toString(16).padStart(8, '0').toUpperCase()}
+                                </td>
+                                <td 
+                                  className="py-2 px-3 font-mono whitespace-nowrap"
+                                  style={{ backgroundColor: highlightColor, color: highlightColor ? "white" : "inherit" }}
+                                >
+                                  {instObj.second}
+                                </td>
+                              </tr>
+                            );
+                          })
                         ) : (
                           <tr>
                             <td colSpan={3} className="py-8 text-center text-gray-500">
@@ -648,7 +714,7 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                 </Tabs>
 
                 <div className="bg-gray-50 py-2 px-3 border-t mt-auto min-h-[15%]">
-                  <PipelineStages currentStage={currentStage} running={running} />
+                  <PipelineStages activeStates={activeStates} running={running} />
                 </div>
               </div>
             </div>
@@ -681,10 +747,10 @@ export default function Simulator({ text, simulatorInstance }: SimulatorProps) {
                   <div>
                     <h3 className="font-semibold mb-2">&nbsp;</h3>
                     <div className="text-xs space-y-1">
-                      <div>Current Stage: {!running ? "STANDBY" : stageToString(currentStage)}</div>
+                      <div>Stalls: {!running ? 0 : stalls}</div>
                       <div>Clock Cycles: {cycles ?? 0}</div>
-                      <div>IR: 0x{(textMap[instruction]?.first && running) ?
-                        ((textMap[instruction].first) >>> 0).toString(16).toUpperCase().padStart(8, '0') :
+                      <div>PC: 0x{(instruction && running) ?
+                        ((instruction) >>> 0).toString(16).toUpperCase().padStart(8, '0') :
                         '00000000'}</div>
                       <div>RZ: {`0x${((pipelineRegisters["RZ"] ?? 0) >>> 0).toString(16).toUpperCase().padStart(8, '0')}`}</div>
                     </div>

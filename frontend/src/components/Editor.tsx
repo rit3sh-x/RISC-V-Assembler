@@ -28,23 +28,40 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
     monaco.languages.setMonarchTokensProvider('riscv-assembly', {
       tokenizer: {
         root: [
-          [/^\s*(addi|add|sub|mul|div|rem|and|or|xor|sll|srl|sra|lw|sw|lb|sb|jal|jalr|beq|bne|blt|bge|li)\b/, 'keyword'],
-          [/\b(x(?:[0-9]|[12]\d|3[01])|zero|ra|sp|gp|tp|t[0-6]|s[0-1]|a[0-7]|s[2-9]|s1[0-1])\b/, 'variable'],
+          [/^\s*(addi|add|sub|mul|div|rem|and|or|xor|sll|srl|sra|lw|sw|lb|sb|jal|jalr|beq|bne|blt|bge|bltu|bgeu|slti|sltiu|andi|ori|xori|slli|srli|srai|lui|auipc|ecall|ebreak|fence|fence\.i|csrrw|csrrs|csrrc|csrrwi|csrrsi|csrrci|lh|lhu|sh|ld|sd|slt|sltu|li|mv|j|jr|ret|call|tail|nop)\b/, 'keyword'],
+          [/\b(x(?:[0-9]|[12]\d|3[01])|zero|ra|sp|gp|tp|t[0-6]|s[0-1]|a[0-7]|s[2-9]|s1[0-1]|fp)\b/, 'variable'],
           [/\b0x[0-9a-fA-F]+\b/, 'number.hex'],
+          [/\b0b[01]+\b/, 'number.binary'],
           [/\b-?\d+\b/, 'number'],
           [/^[a-zA-Z_]\w*:/, 'type.identifier'],
+          [/\.(text|data|bss|rodata|section|globl|global|extern|align|byte|half|word|dword|quad|string|ascii|asciiz|space|skip|equ|macro|endm|file|type|size|option|include|set)\b/, 'directive'],
+          [/#.*$/, 'comment'],
+          [/"([^"\\]|\\.)*$/, 'string.invalid'],
+          [/"/, { token: 'string.quote', bracket: '@open', next: '@string' }],
+        ],
+        string: [
+          [/[^\\"]+/, 'string'],
+          [/\\./, 'string.escape'],
+          [/"/, { token: 'string.quote', bracket: '@close', next: '@pop' }],
         ],
       },
     });
+    
     monaco.editor.defineTheme('riscv-theme', {
       base: 'vs',
       inherit: true,
       rules: [
         { token: 'keyword', foreground: '0000FF', fontStyle: 'bold' },
-        { token: 'variable', foreground: '008800' },
-        { token: 'number', foreground: '666633' },
+        { token: 'variable', foreground: 'FF0000' },
+        { token: 'number', foreground: 'FF4500' },
         { token: 'number.hex', foreground: 'FF8C00' },
-        { token: 'type.identifier', foreground: 'FF6600', fontStyle: 'bold' },
+        { token: 'number.binary', foreground: 'FFA500' },
+        { token: 'type.identifier', foreground: '00B7EB', fontStyle: 'bold' },
+        { token: 'directive', foreground: 'FF69B4', fontStyle: 'italic' },
+        { token: 'comment', foreground: '008000', fontStyle: 'italic' },
+        { token: 'string', foreground: '800080' },
+        { token: 'string.escape', foreground: '9932CC' },
+        { token: 'string.invalid', foreground: 'FF0000', fontStyle: 'underline' },
       ],
       colors: {
         'editor.background': '#FFFFFF',
@@ -53,17 +70,31 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
       },
     });
 
-    editor.updateOptions({ theme: 'riscv-theme' });
+    editor.updateOptions({ 
+      theme: 'riscv-theme',
+      cursorBlinking: 'phase',
+      cursorStyle: 'line',
+      cursorWidth: 2
+    });
+
     const editorDom = editor.getDomNode();
     if (editorDom) {
-      const cursorLayer = editorDom.querySelector('.cursor');
-      if (cursorLayer) {
-        cursorLayer.classList.remove('monaco-mouse-cursor-text-hidden');
-        cursorLayer.classList.add('monaco-mouse-cursor-text');
-        (cursorLayer as HTMLElement).style.visibility = 'visible';
-        (cursorLayer as HTMLElement).style.backgroundColor = '#0000FF';
-      }
+      const styleElement = document.createElement('style');
+      styleElement.textContent = `
+        .monaco-editor .cursor {
+          background-color: #0000FF !important;
+          border-color: #0000FF !important;
+          animation: blink-cursor 1s infinite;
+        }
+        @keyframes blink-cursor {
+          0% { opacity: 1; }
+          50% { opacity: 0; }
+          100% { opacity: 1; }
+        }
+      `;
+      editorDom.appendChild(styleElement);
     }
+    
     editor.focus();
   };
 
@@ -95,7 +126,7 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
           Upload Code
           <input
             type="file"
-            accept=".s,.asm,.txt,.mc"
+            accept=".s,.asm,.txt"
             onChange={handleFileUpload}
             className="hidden"
           />

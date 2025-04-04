@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Editor from "@/components/Editor";
 import Simulator from "@/components/Simulator";
+import { Sidebar } from "@/components/Sidebar";
 import { Github, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 import { useState } from "react";
 import { useSimulator } from '@/hooks/useSimulator';
@@ -17,19 +18,50 @@ declare global {
   }
 }
 
+export type SimulationControls = {
+  pipelining: boolean;
+  dataForwarding: boolean;
+}
+
 export default function Landing() {
   const router = useRouter();
   const { simulator, loading, error } = useSimulator();
   const [activeTab, setActiveTab] = useState<"editor" | "simulator">("editor");
+  const [isOpen, setIsOpen] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  
+  const [simulationControls, setSimulationControls] = useState<SimulationControls>({
+    pipelining: true,
+    dataForwarding: true,
+  });
+
   const [code, setCode] = useState<string>(`# ------------ TEXT SEGMENT ------------ #
-0x00000000 0x002082b3 , add x5,x1,x2 # 0110011-000-0000000-00101-00001-00010-NULL
-0x00000004 0x0041f333 , and x6,x3,x4 # 0110011-111-0000000-00110-00011-00100-NULL
-0x00000008 0x0062e3b3 , or x7,x5,x6 # 0110011-110-0000000-00111-00101-00110-NULL`);
+add x5,x1,x2 # 0110011-000-0000000-00101-00001-00010-NULL
+and x6,x3,x4 # 0110011-111-0000000-00110-00011-00100-NULL
+or x7,x5,x6 # 0110011-110-0000000-00111-00101-00110-NULL`);
 
   const handleScriptLoad = () => {
     window.simulatorScriptLoaded = true;
     window.dispatchEvent(new Event('simulator-ready'));
   };
+
+  const handlePipelining = (enabled: boolean) => {
+    setSimulationControls(prev => ({ ...prev, pipelining: enabled }));
+    console.log('Pipelining:', enabled);
+  }
+
+  const handleDataForwarding = (enabled: boolean) => {
+    setSimulationControls(prev => ({ ...prev, dataForwarding: enabled }));
+    console.log('Data Forwarding:', enabled);
+  }
+
+  const handleSidebarOpenChange = (open: boolean) => {
+    setIsOpen(open);
+  }
+
+  const handleRunningChange = (running: boolean) => {
+    setIsRunning(running);
+  }
 
   const scriptElement = (
     <Script
@@ -127,24 +159,30 @@ export default function Landing() {
       </Link>
       <div className="fixed top-4 mx-auto flex gap-2 bg-white p-2 rounded-lg shadow-md z-[999]">
         <div
-          className={`cursor-pointer px-4 py-2 rounded-md transition ${activeTab === "editor" ? "bg-gray-200 font-semibold" : "text-gray-500"
-            }`}
-          onClick={() => {
-            setActiveTab("editor");
-          }}
+          className={`cursor-pointer px-4 py-2 rounded-md transition ${activeTab === "editor" ? "bg-gray-200 font-semibold" : "text-gray-500"}`}
+          onClick={() => setActiveTab("editor")}
         >
           Editor
         </div>
         <div
-          className={`cursor-pointer px-4 py-2 rounded-md transition ${activeTab === "simulator" ? "bg-gray-200 font-semibold" : "text-gray-500"
-            }`}
-          onClick={() => {
-            setActiveTab("simulator");
-          }}
+          className={`cursor-pointer px-4 py-2 rounded-md transition ${activeTab === "simulator" ? "bg-gray-200 font-semibold" : "text-gray-500"}`}
+          onClick={() => setActiveTab("simulator")}
         >
           Simulator
         </div>
       </div>
+      
+      {activeTab === "simulator" && (
+        <Sidebar 
+          controls={simulationControls}
+          onPipeliningChange={handlePipelining}
+          onDataForwardingChange={handleDataForwarding}
+          isOpen={isOpen}
+          onOpenChange={handleSidebarOpenChange}
+          isRunning={isRunning}
+        />
+      )}
+      
       <div className="w-[95%] h-[95%]">
         {activeTab === "editor" ? (
           <Editor text={code} setText={setCode} setActiveTab={setActiveTab} />
@@ -152,6 +190,9 @@ export default function Landing() {
           <Simulator
             text={code}
             simulatorInstance={simulator}
+            controls={simulationControls}
+            onSidebarOpenChange={handleSidebarOpenChange}
+            onRunningChange={handleRunningChange}
           />
         )}
       </div>

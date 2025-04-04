@@ -1,28 +1,36 @@
 declare namespace createSimulator {
-  export interface Simulator {
-    loadProgram(input: string): boolean;
-    step(): boolean;
-    run(): void;
-    reset(): void;
-    parseInstructions(instHex: number): string;
-    getRegisters(): number[];
-    getPC(): number;
-    getCycles(): number;
-    getDataMap(): Record<string, number>;
-    getTextMap(): Record<string, { first: number, second: string }>;
-    getConsoleOutput(): Record<string, string>;
-    getPipelineRegisters(): Record<string, number>;
-    getCurrentStage(): number;
-    isRunning(): boolean;
-    getInstruction(): number;
-  }
-
   export enum Stage {
     FETCH = 0,
     DECODE = 1,
     EXECUTE = 2,
     MEMORY = 3,
     WRITEBACK = 4
+  }
+
+  export interface InstructionRegisters {
+    RA: number;
+    RB: number;
+    RM: number;
+    RY: number;
+    RZ: number;
+  }
+
+  export interface Simulator {
+    loadProgram(input: string): boolean;
+    step(): boolean;
+    run(): void;
+    reset(): void;
+    getRegisters(): number[];
+    getPC(): number;
+    getCycles(): number;
+    getDataMap(): Record<string, number>;
+    getTextMap(): Record<string, { first: number, second: string }>;
+    getLogs(): Record<string, string>;
+    isRunning(): boolean;
+    getActiveStages(): Record<number, { active: boolean, instruction: number }>;
+    getStalls(): number;
+    setEnvironment(pipeline: boolean, dataForwarding: boolean, followedInstruction?: number): void;
+    getInstructionRegisters(): InstructionRegisters;
   }
 
   export interface SimulatorModuleInstance {

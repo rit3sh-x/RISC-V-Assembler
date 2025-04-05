@@ -389,6 +389,10 @@ export default function Simulator({
     updateSimulatorState();
   }, [simulatorInstance, updateSimulatorState]);
 
+  useEffect(() => {
+    console.log(activeStates)
+  },[activeStates])
+
   const handleAssemble = useCallback(() => {
     simulatorInstance.loadProgram(text);
     updateSimulatorState();

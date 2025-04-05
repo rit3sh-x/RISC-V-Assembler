@@ -7,12 +7,13 @@
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
+#include <iomanip>
 #include "types.hpp"
 
 using namespace riscv;
 
 inline void initialiseRegisters(uint32_t* registers) {
-    for (int i = 0; i < 32; i++) registers[i] = 0x00000000;
+    std::memset(registers, 0, 32 * sizeof(uint32_t));
     registers[2] = 0x7FFFFFDC;
     registers[3] = 0x10000000;
     registers[10] = 0x00000001;
@@ -33,44 +34,54 @@ inline InstructionType classifyInstructions(uint32_t instHex) {
     uint32_t opcode = instHex & 0x7F;
     uint32_t func3 = (instHex >> 12) & 0x7;
     uint32_t func7 = (instHex >> 25) & 0x7F;
-
+    
     auto rTypeEncoding = RTypeInstructions::getEncoding();
     for (const auto &[name, op] : rTypeEncoding.opcodeMap) {
-        if (op == opcode && rTypeEncoding.func3Map.at(name) == func3 && rTypeEncoding.func7Map.at(name) == func7) return InstructionType::R;
+        if (op == opcode && rTypeEncoding.func3Map.at(name) == func3 && rTypeEncoding.func7Map.at(name) == func7) {
+            return InstructionType::R;
+        }
     }
 
     auto iTypeEncoding = ITypeInstructions::getEncoding();
     for (const auto &[name, op] : iTypeEncoding.opcodeMap) {
-        if (op == opcode && iTypeEncoding.func3Map.at(name) == func3) return InstructionType::I;
+        if (op == opcode && iTypeEncoding.func3Map.at(name) == func3) {
+            return InstructionType::I;
+        }
     }
 
     auto sTypeEncoding = STypeInstructions::getEncoding();
     for (const auto &[name, op] : sTypeEncoding.opcodeMap) {
-        if (op == opcode && sTypeEncoding.func3Map.at(name) == func3) return InstructionType::S;
-    }
-
-    auto sbTypeEncoding = SBTypeInstructions::getEncoding();
-    for (const auto &[name, op] : sbTypeEncoding.opcodeMap) {
-        if (op == opcode && sbTypeEncoding.func3Map.at(name) == func3) return InstructionType::SB;
+        if (op == opcode && sTypeEncoding.func3Map.at(name) == func3) {
+            return InstructionType::S;
+        }
     }
 
     auto uTypeEncoding = UTypeInstructions::getEncoding();
     for (const auto &[name, op] : uTypeEncoding.opcodeMap) {
-        if (op == opcode) return InstructionType::U;
+        if (op == opcode) {
+            return InstructionType::U;
+        }
+    }
+
+    auto sbTypeEncoding = SBTypeInstructions::getEncoding();
+    for (const auto &[name, op] : sbTypeEncoding.opcodeMap) {
+        if (op == opcode && sbTypeEncoding.func3Map.at(name) == func3) {
+            return InstructionType::SB;
+        }
     }
 
     auto ujTypeEncoding = UJTypeInstructions::getEncoding();
     for (const auto &[name, op] : ujTypeEncoding.opcodeMap) {
-        if (op == opcode) return InstructionType::UJ;
+        if (op == opcode) {
+            return InstructionType::UJ;
+        }
     }
-    
-    std::stringstream ss;
-    ss << "Instruction 0x" << std::hex << instHex << " could not be classified: Invalid opcode (0x" << opcode << ")";
-    logs[400] = ss.str();
-    throw std::runtime_error(ss.str());
+
+    logs[404] = "Instruction 0x" + std::to_string(instHex) + " could not be classified: Invalid opcode (0x" + std::to_string(opcode) + ")";
+    throw std::runtime_error(logs[404]);
 }
 
-inline void fetchInstruction(InstructionNode* node , uint32_t& PC, bool& running, std::map<uint32_t, std::pair<uint32_t, std::string>>& textMap) {
+inline void fetchInstruction(InstructionNode* node, uint32_t& PC, bool& running, std::map<uint32_t, std::pair<uint32_t, std::string>>& textMap) {
     if (!isValidAddress(PC, 4)) {
         std::ostringstream oss;
         oss << "Fetch error: Invalid PC address 0x" << std::hex << PC;
@@ -126,17 +137,9 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
         case InstructionType::UJ:
             node->rd = (node->instruction >> 7) & 0x1F;
             break;
-            
-        default:
-            logs[400] = "Unknown instruction type";
-            throw std::runtime_error("Error: Unknown instruction type");
     }
 
-    if (node->rs1 != UINT32_MAX) {
-        instructionRegisters.RA = registers[node->rs1];
-    } else {
-        instructionRegisters.RA = 0;
-    }
+    instructionRegisters.RA = (node->rs1 != UINT32_MAX) ? registers[node->rs1] : 0;
 
     switch (node->instructionType) {
         case InstructionType::R:
@@ -158,16 +161,14 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
             break;
         }
 
-        case InstructionType::SB: {
-            int32_t imm = ((node->instruction >> 31) & 0x1) << 12 | 
-                         ((node->instruction >> 7) & 0x1) << 11 | 
-                         ((node->instruction >> 25) & 0x3F) << 5 | 
-                         ((node->instruction >> 8) & 0xF) << 1;
-            if (imm & 0x1000) imm |= 0xFFFFE000;
-            instructionRegisters.RB = imm;
+        case InstructionType::SB:
+            instructionRegisters.RB = ((node->instruction >> 31) & 0x1) << 12 | 
+                                     ((node->instruction >> 7) & 0x1) << 11 | 
+                                     ((node->instruction >> 25) & 0x3F) << 5 | 
+                                     ((node->instruction >> 8) & 0xF) << 1;
+            if (instructionRegisters.RB & 0x1000) instructionRegisters.RB |= 0xFFFFE000;
             instructionRegisters.RM = registers[node->rs2];
             break;
-        }
 
         case InstructionType::U:
             instructionRegisters.RB = node->instruction & 0xFFFFF000;
@@ -182,10 +183,6 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
             instructionRegisters.RB = imm;
             break;
         }
-
-        default:
-            logs[400] = "The instruction is not decoded";
-            throw std::runtime_error("Error: The instruction is not decoded");
     }
 }
 
@@ -202,11 +199,9 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
             } else if (name == "mul") {
                 result = instructionRegisters.RA * instructionRegisters.RB;
             } else if (name == "div") {
-                if (instructionRegisters.RB == 0) result = 0xFFFFFFFF;
-                else result = static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) / static_cast<int32_t>(instructionRegisters.RB));
+                result = (instructionRegisters.RB == 0) ? 0xFFFFFFFF : static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) / static_cast<int32_t>(instructionRegisters.RB));
             } else if (name == "rem") {
-                if (instructionRegisters.RB == 0) result = instructionRegisters.RA;
-                else result = static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) % static_cast<int32_t>(instructionRegisters.RB));
+                result = (instructionRegisters.RB == 0) ? instructionRegisters.RA : static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) % static_cast<int32_t>(instructionRegisters.RB));
             } else if (name == "and") {
                 result = instructionRegisters.RA & instructionRegisters.RB;
             } else if (name == "or") {
@@ -236,27 +231,12 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
                 result = instructionRegisters.RA & instructionRegisters.RB;
             } else if (name == "ori") {
                 result = instructionRegisters.RA | instructionRegisters.RB;
-            } else if (name == "xori") {
-                result = instructionRegisters.RA ^ instructionRegisters.RB;
-            } else if (name == "slti") {
-                result = (static_cast<int32_t>(instructionRegisters.RA) < static_cast<int32_t>(instructionRegisters.RB)) ? 1 : 0;
-            } else if (name == "sltiu") {
-                result = (instructionRegisters.RA < instructionRegisters.RB) ? 1 : 0;
-            } else if (name == "slli") {
-                result = instructionRegisters.RA << (instructionRegisters.RB & 0x1F);
-            } else if (name == "srli") {
-                result = instructionRegisters.RA >> (instructionRegisters.RB & 0x1F);
-            } else if (name == "srai") {
-                result = static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) >> (instructionRegisters.RB & 0x1F));
             } else if (name == "lb" || name == "lh" || name == "lw") {
                 result = instructionRegisters.RA + instructionRegisters.RB;
                 instructionRegisters.RY = result;
                 return;
-            } else if (name == "ld") {
-                logs[404] = "ld instruction not supported";
-                throw std::runtime_error("Error: ld instruction not supported");
             } else if (name == "jalr") {
-                result = PC;
+                result = node->PC + INSTRUCTION_SIZE;
                 PC = (instructionRegisters.RA + instructionRegisters.RB) & ~1;
             }
             instructionRegisters.RY = result;
@@ -267,10 +247,8 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
     auto sTypeEncoding = STypeInstructions::getEncoding();
     for (const auto &[name, op] : sTypeEncoding.opcodeMap) {
         if (op == node->opcode && sTypeEncoding.func3Map.at(name) == node->func3) {
-            if (name == "sb" || name == "sh" || name == "sw") {
-                result = instructionRegisters.RA + instructionRegisters.RB;
-                instructionRegisters.RY = result;
-            }
+            result = instructionRegisters.RA + instructionRegisters.RB;
+            instructionRegisters.RY = result;
             return;
         }
     }
@@ -280,23 +258,15 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
         if (op == node->opcode && sbTypeEncoding.func3Map.at(name) == node->func3) {
             bool branchTaken = false;
             if (name == "beq") {
-                branchTaken = (instructionRegisters.RA == instructionRegisters.RB);
+                branchTaken = (instructionRegisters.RA == instructionRegisters.RM);
             } else if (name == "bne") {
-                branchTaken = (instructionRegisters.RA != instructionRegisters.RB);
+                branchTaken = (instructionRegisters.RA != instructionRegisters.RM);
             } else if (name == "blt") {
-                branchTaken = (static_cast<int32_t>(instructionRegisters.RA) < static_cast<int32_t>(instructionRegisters.RB));
+                branchTaken = (static_cast<int32_t>(instructionRegisters.RA) < static_cast<int32_t>(instructionRegisters.RM));
             } else if (name == "bge") {
-                branchTaken = (static_cast<int32_t>(instructionRegisters.RA) >= static_cast<int32_t>(instructionRegisters.RB));
-            } else if (name == "bltu") {
-                branchTaken = (instructionRegisters.RA < instructionRegisters.RB);
-            } else if (name == "bgeu") {
-                branchTaken = (instructionRegisters.RA >= instructionRegisters.RB);
+                branchTaken = (static_cast<int32_t>(instructionRegisters.RA) >= static_cast<int32_t>(instructionRegisters.RM));
             }
-            if (branchTaken) {
-                PC = node->PC + instructionRegisters.RB;
-            } else {
-                PC = node->PC + INSTRUCTION_SIZE;
-            }
+            PC = branchTaken ? (node->PC + instructionRegisters.RB) : PC;
             instructionRegisters.RY = branchTaken;
             return;
         }
@@ -319,19 +289,18 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
     for (const auto &[name, op] : ujTypeEncoding.opcodeMap) {
         if (op == node->opcode) {
             if (name == "jal") {
-                result = PC;
+                result = node->PC + INSTRUCTION_SIZE;
                 PC = node->PC + instructionRegisters.RB;
             }
             instructionRegisters.RY = result;
             return;
         }
     }
-    logs[400] = "The Instruction is not executed";
-    throw std::runtime_error("Error: The Instruction is not executed");
 }
 
 inline void memoryAccess(InstructionNode* node, InstructionRegisters& instructionRegisters, uint32_t* registers, std::unordered_map<uint32_t, uint8_t>& dataMap) {
     uint32_t address = instructionRegisters.RY;
+    instructionRegisters.RZ = instructionRegisters.RY;
     
     auto iTypeEncoding = ITypeInstructions::getEncoding();
     for (const auto &[name, op] : iTypeEncoding.opcodeMap) {
@@ -381,34 +350,22 @@ inline void memoryAccess(InstructionNode* node, InstructionRegisters& instructio
 }
 
 inline void writeback(InstructionNode* node, InstructionRegisters& instructionRegisters, uint32_t* registers) {
-    if(node->rd != 0) {
-    switch (node->instructionType) {
-        case InstructionType::R:
-        case InstructionType::U:
-        case InstructionType::UJ:
-            registers[node->rd] = instructionRegisters.RY;
-            break;
-
-        case InstructionType::I:
-            if (node->opcode == 0x03) { 
+    if (node->rd != 0) {
+        switch (node->instructionType) {
+            case InstructionType::R:
+            case InstructionType::U:
+            case InstructionType::UJ:
+            case InstructionType::I:
                 registers[node->rd] = instructionRegisters.RZ;
-            } else {
-                registers[node->rd] = instructionRegisters.RY;
-            }
-            break;
-
-        case InstructionType::S:
-        case InstructionType::SB:
-            break;
-
-        default:
-            logs[400] = "Unknown instruction type in writeback";
-            throw std::runtime_error("Error: Unknown instruction type in writeback");
+                break;
+            case InstructionType::SB:
+            case InstructionType::S:
+                break;
         }
     }
     registers[0] = 0;
 }
-    
+
 inline std::string parseInstructions(uint32_t instHex) {
     uint32_t opcode = instHex & 0x7F;
     uint32_t rd = (instHex >> 7) & 0x1F;
@@ -432,7 +389,11 @@ inline std::string parseInstructions(uint32_t instHex) {
             int32_t imm = (instHex >> 20);
             if (imm & 0x800) imm |= 0xFFFFF000;
             std::stringstream ss;
-            ss << name << " x" << rd << ", x" << rs1 << ", " << imm;
+            if (name == "lb" || name == "lh" || name == "lw") {
+                ss << name << " x" << rd << ", " << imm << "(x" << rs1 << ")";
+            } else {
+                ss << name << " x" << rd << ", x" << rs1 << ", " << imm;
+            }
             return ss.str();
         }
     }
@@ -479,8 +440,8 @@ inline std::string parseInstructions(uint32_t instHex) {
             return ss.str();
         }
     }
-    logs[400] = "The Instruction is not valid";
-    throw std::runtime_error("Error: The Instruction is not valid");
+    logs[400] = "Invalid instruction: 0x" + std::to_string(instHex);
+    throw std::runtime_error(logs[400]);
 }
 
 #endif

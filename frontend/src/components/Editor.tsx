@@ -23,18 +23,17 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
 
   const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
     editorRef.current = editor;
-    
     monaco.languages.register({ id: 'riscv-assembly' });
     monaco.languages.setMonarchTokensProvider('riscv-assembly', {
       tokenizer: {
         root: [
-          [/^\s*(addi|add|sub|mul|div|rem|and|or|xor|sll|srl|sra|lw|sw|lb|sb|jal|jalr|beq|bne|blt|bge|bltu|bgeu|slti|sltiu|andi|ori|xori|slli|srli|srai|lui|auipc|ecall|ebreak|fence|fence\.i|csrrw|csrrs|csrrc|csrrwi|csrrsi|csrrci|lh|lhu|sh|ld|sd|slt|sltu|li|mv|j|jr|ret|call|tail|nop)\b/, 'keyword'],
+          [/^\s*(add|sub|mul|div|rem|and|or|xor|sll|slt|sra|srl|addi|andi|ori|lb|ld|lh|lw|jalr|sb|sw|sd|sh|beq|bne|bge|blt|auipc|lui|jal)\b/, 'keyword'],
           [/\b(x(?:[0-9]|[12]\d|3[01])|zero|ra|sp|gp|tp|t[0-6]|s[0-1]|a[0-7]|s[2-9]|s1[0-1]|fp)\b/, 'variable'],
           [/\b0x[0-9a-fA-F]+\b/, 'number.hex'],
           [/\b0b[01]+\b/, 'number.binary'],
           [/\b-?\d+\b/, 'number'],
           [/^[a-zA-Z_]\w*:/, 'type.identifier'],
-          [/\.(text|data|bss|rodata|section|globl|global|extern|align|byte|half|word|dword|quad|string|ascii|asciiz|space|skip|equ|macro|endm|file|type|size|option|include|set)\b/, 'directive'],
+          [/\.(text|data|byte|half|word|dword|asciz|acsciiz)\b/, 'directive'],
           [/#.*$/, 'comment'],
           [/"([^"\\]|\\.)*$/, 'string.invalid'],
           [/"/, { token: 'string.quote', bracket: '@open', next: '@string' }],

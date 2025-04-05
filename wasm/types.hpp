@@ -1,8 +1,6 @@
 #ifndef TYPES_HPP
 #define TYPES_HPP
 
-#include <emscripten/bind.h>
-#include <emscripten/val.h>
 #include <unordered_set>
 #include <unordered_map>
 #include <algorithm>
@@ -40,11 +38,10 @@ namespace riscv {
 
     inline const std::unordered_set<std::string> opcodes = {
         "add", "sub", "mul", "div", "rem", "and", "or", "xor", "sll", "slt", "sra", "srl",
-        "addi", "andi", "ori", "lb", "lh", "lw", "ld", "jalr",
-        "sb", "sh", "sw", "sd",
-        "beq", "bne", "bge", "blt", "bgeu", "bltu",
-        "auipc", "lui", "jal",
-        "slti", "sltiu", "xori", "srli", "srai", "slli"
+        "addi", "andi", "ori", "lb", "lh", "lw", "jalr",
+        "sb", "sh", "sw",
+        "beq", "bne", "bge", "blt",
+        "auipc", "lui", "jal"
     };
 
     inline const std::unordered_map<std::string, int> directives = {
@@ -96,10 +93,16 @@ namespace riscv {
         uint32_t PC, opcode, rs1, rs2, rd, instruction, func3, func7;
         InstructionType instructionType;
         Stage stage;
-        bool stalled;
+        bool stalled, branchPredicted;
     
         InstructionNode(uint32_t pc = 0) 
-            : PC(pc), opcode(0), rs1(0), rs2(0), rd(0), instruction(0), func3(0), func7(0), stage(Stage::FETCH), stalled(false) {}
+            : PC(pc), opcode(0), rs1(0), rs2(0), rd(0), instruction(0), func3(0), func7(0), stage(Stage::FETCH), stalled(false), branchPredicted(false) {}
+
+        InstructionNode(const InstructionNode& other)
+            : PC(other.PC), opcode(other.opcode), rs1(other.rs1), rs2(other.rs2), rd(other.rd), 
+              instruction(other.instruction), func3(other.func3), func7(other.func7),
+              instructionType(other.instructionType), stage(other.stage), 
+              stalled(other.stalled), branchPredicted(other.branchPredicted) {}
     };
 
     struct InstructionRegisters {
@@ -140,94 +143,6 @@ namespace riscv {
               stallBubbles(0), dataHazards(0), controlHazards(0), branchMispredictions(0),
               dataHazardStalls(0), controlHazardStalls(0), pipelineFlushes(0),
               enablePipeline(false), enableDataForwarding(false) {}
-    };
-
-    struct BranchPredictionUnit {
-        static const uint32_t PHT_SIZE = 1024;
-        static const uint32_t PHT_MASK = PHT_SIZE - 1;
-        static const uint32_t BTB_SIZE = 256;
-        static const uint32_t BTB_MASK = BTB_SIZE - 1;
-
-        bool patternHistoryTable[PHT_SIZE];
-        struct BTBEntry {
-            uint32_t tag;
-            uint32_t target;
-            bool valid;
-        };
-        BTBEntry branchTargetBuffer[BTB_SIZE];
-
-        uint32_t totalPredictions;
-        uint32_t correctPredictions;
-        uint32_t incorrectPredictions;
-        uint32_t pipelineFlushes;
-
-        uint32_t getPHTIndex(uint32_t pc) const {
-            return (pc >> 2) & PHT_MASK;
-        }
-
-        uint32_t getBTBTag(uint32_t pc) const {
-            return pc >> 10;
-        }
-
-        uint32_t getBTBIndex(uint32_t pc) const {
-            return (pc >> 2) & BTB_MASK;
-        }
-        
-        bool predict(uint32_t pc) const {
-            uint32_t index = getPHTIndex(pc);
-            return patternHistoryTable[index];
-        }
-        
-        uint32_t getTargetPC(uint32_t pc) const {
-            uint32_t index = getBTBIndex(pc);
-            uint32_t tag = getBTBTag(pc);
-            const BTBEntry& entry = branchTargetBuffer[index];
-            
-            if (entry.valid && entry.tag == tag) return entry.target;
-            return 0;
-        }
-
-        void update(uint32_t pc, bool taken, uint32_t target = 0) {
-            totalPredictions++;
-            
-            uint32_t phtIndex = getPHTIndex(pc);
-            bool predicted = patternHistoryTable[phtIndex];
-            
-            if (predicted == taken) {
-                correctPredictions++;
-                logs[200] = "Branch at PC 0x" + std::to_string(pc) + " predicted correctly: " + + (taken ? "taken" : "not taken");
-            } else {
-                incorrectPredictions++;
-                pipelineFlushes++;
-                logs[200] = "Branch at PC 0x" + std::to_string(pc) + " mispredicted: " + "predicted " + (predicted ? "taken" : "not taken") + ", actual " + (taken ? "taken" : "not taken") + ". Pipeline flushed.";
-            }
-
-            patternHistoryTable[phtIndex] = taken;
-
-            if (target) {
-                uint32_t btbIndex = getBTBIndex(pc);
-                uint32_t tag = getBTBTag(pc);
-                branchTargetBuffer[btbIndex].tag = tag;
-                branchTargetBuffer[btbIndex].target = target;
-                branchTargetBuffer[btbIndex].valid = true;
-            }
-        }
-
-        BranchPredictionUnit() {
-            for (uint32_t i = 0; i < PHT_SIZE; i++) {
-                patternHistoryTable[i] = false;
-            }
-            for (uint32_t i = 0; i < BTB_SIZE; i++) {
-                branchTargetBuffer[i].valid = false;
-                branchTargetBuffer[i].tag = 0;
-                branchTargetBuffer[i].target = 0;
-            }
-            
-            totalPredictions = 0;
-            correctPredictions = 0;
-            incorrectPredictions = 0;
-            pipelineFlushes = 0;
-        }
     };
 
     struct InstructionEncoding {
@@ -354,7 +269,7 @@ namespace riscv {
             throw std::runtime_error(errorMsg);
         }
     }
-
+    
     struct RTypeInstructions {
         static inline const InstructionEncoding& getEncoding() {
             static const InstructionEncoding encoding = {
@@ -375,16 +290,11 @@ namespace riscv {
     struct ITypeInstructions {
         static inline const InstructionEncoding& getEncoding() {
             static const InstructionEncoding encoding = {
-                {{"slli", 0b0000000}, {"srli", 0b0000000}, {"srai", 0b0100000}},
-                {{"addi", 0b000}, {"andi", 0b111}, {"ori", 0b110}, {"slti", 0b010}, 
-                 {"sltiu", 0b011}, {"xori", 0b100}, {"lb", 0b000}, {"lh", 0b001}, 
-                 {"lw", 0b010}, {"ld", 0b011}, {"jalr", 0b000}, {"slli", 0b001}, 
-                 {"srli", 0b101}, {"srai", 0b101}},
+                {},
+                {{"addi", 0b000}, {"andi", 0b000}, {"ori", 0b110}, 
+                 {"lb", 0b000}, {"lh", 0b001}, {"lw", 0b010}, {"jalr", 0b000}},
                 {{"addi", 0b0010011}, {"andi", 0b0010011}, {"ori", 0b0010011}, 
-                 {"slti", 0b0010011}, {"sltiu", 0b0010011}, {"xori", 0b0010011}, 
-                 {"lb", 0b0000011}, {"lh", 0b0000011}, {"lw", 0b0000011}, {"ld", 0b0000011}, 
-                 {"jalr", 0b1100111}, {"slli", 0b0010011}, {"srli", 0b0010011}, 
-                 {"srai", 0b0010011}}
+                 {"lb", 0b0000011}, {"lh", 0b0000011}, {"lw", 0b0000011}, {"jalr", 0b1100111}}
             };
             return encoding;
         }
@@ -394,8 +304,8 @@ namespace riscv {
         static inline const InstructionEncoding& getEncoding() {
             static const InstructionEncoding encoding = {
                 {},
-                {{"sb", 0b000}, {"sh", 0b001}, {"sw", 0b010}, {"sd", 0b011}},
-                {{"sb", 0b0100011}, {"sh", 0b0100011}, {"sw", 0b0100011}, {"sd", 0b0100011}}
+                {{"sb", 0b000}, {"sh", 0b001}, {"sw", 0b010}},
+                {{"sb", 0b0100011}, {"sh", 0b0100011}, {"sw", 0b0100011}}
             };
             return encoding;
         }
@@ -405,10 +315,8 @@ namespace riscv {
         static inline const InstructionEncoding& getEncoding() {
             static const InstructionEncoding encoding = {
                 {},
-                {{"beq", 0b000}, {"bne", 0b001}, {"bge", 0b101}, {"blt", 0b100}, 
-                 {"bgeu", 0b111}, {"bltu", 0b110}},
-                {{"beq", 0b1100011}, {"bne", 0b1100011}, {"bge", 0b1100011}, 
-                 {"blt", 0b1100011}, {"bgeu", 0b1100011}, {"bltu", 0b1100011}}
+                {{"beq", 0b000}, {"bne", 0b001}, {"bge", 0b101}, {"blt", 0b100}},
+                {{"beq", 0b1100011}, {"bne", 0b1100011}, {"bge", 0b1100011}, {"blt", 0b1100011}}
             };
             return encoding;
         }

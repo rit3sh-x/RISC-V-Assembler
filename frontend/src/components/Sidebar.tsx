@@ -13,7 +13,6 @@ interface SidebarProps {
   isRunning: boolean;
 }
 
-
 export function Sidebar({
   controls,
   onPipeliningChange,
@@ -86,7 +85,7 @@ export function Sidebar({
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Data Forwarding</span>
                 <Switch
-                  checked={controls.dataForwarding}
+                  checked={controls.dataForwarding && controls.pipelining}
                   onCheckedChange={(checked) => toggleSwitch('dataForwarding', checked)}
                   className="data-[state=checked]:bg-blue-600"
                 />

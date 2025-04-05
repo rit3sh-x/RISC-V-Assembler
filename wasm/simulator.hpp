@@ -1,17 +1,13 @@
 #ifndef SIMULATOR_HPP
 #define SIMULATOR_HPP
 
-#include <emscripten/bind.h>
-#include <emscripten/val.h>
 #include <vector>
 #include <string>
 #include <map>
 #include <unordered_map>
 #include <cstdint>
-#include <sstream>
 #include <stdexcept>
-#include <stack>
-#include <iostream>
+#include <iomanip>
 #include "types.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
@@ -26,7 +22,7 @@ private:
     std::unordered_map<uint32_t, uint8_t> dataMap;
     std::map<uint32_t, std::pair<uint32_t, std::string>> textMap;
 
-    std::stack<InstructionNode> pipeline;
+    std::map<Stage, InstructionNode*> pipeline;
     InstructionRegisters instructionRegisters;
 
     bool running;
@@ -34,14 +30,17 @@ private:
     bool isDataForwarding;
 
     SimulationStats stats;
-    // BranchPredictionUnit branchPredictor;
     std::vector<RegisterDependency> registerDependencies;
 
     uint32_t instructionCount;
-    
+
     void advancePipeline();
     void flushPipeline(const std::string& reason = "");
     void applyDataForwarding(InstructionNode& node);
+    bool checkDependencies(const InstructionNode& node) const;
+    void updateDependencies(InstructionNode& node, Stage stage);
+    void setStageInstruction(Stage stage, InstructionNode* node);
+    bool isPipelineEmpty() const;
 
 public:
     Simulator();
@@ -58,7 +57,6 @@ public:
     std::unordered_map<uint32_t, uint8_t> getDataMap() const;
     std::map<uint32_t, std::pair<uint32_t, std::string>> getTextMap() const;
     uint32_t getCycles() const;
-    bool hasStallCondition() const;
     InstructionRegisters getInstructionRegisters() const;
     std::unordered_map<int, std::string> getLogs();
 };
@@ -68,10 +66,21 @@ Simulator::Simulator() : PC(TEXT_SEGMENT_START),
                          isPipeline(true),
                          isDataForwarding(true),
                          stats(SimulationStats()),
-                        //  branchPredictor(BranchPredictionUnit()),
                          instructionCount(0)
 {
     initialiseRegisters(registers);
+    pipeline[Stage::FETCH] = nullptr;
+    pipeline[Stage::DECODE] = nullptr;
+    pipeline[Stage::EXECUTE] = nullptr;
+    pipeline[Stage::MEMORY] = nullptr;
+    pipeline[Stage::WRITEBACK] = nullptr;
+}
+
+void Simulator::setStageInstruction(Stage stage, InstructionNode* node) {
+    if (pipeline[stage] != nullptr) {
+        delete pipeline[stage];
+    }
+    pipeline[stage] = node;
 }
 
 bool Simulator::loadProgram(const std::string &input) {
@@ -107,13 +116,18 @@ bool Simulator::loadProgram(const std::string &input) {
         }
 
         for (const auto &[address, value] : assembler.getMachineCode()) {
-            if (address >= DATA_SEGMENT_START) dataMap[address] = static_cast<uint8_t>(value);
-            else textMap[address] = std::make_pair(value, parseInstructions(value));
+            if (address >= DATA_SEGMENT_START) {
+                dataMap[address] = static_cast<uint8_t>(value);
+            } else {
+                textMap[address] = std::make_pair(value, parseInstructions(value));
+            }
         }
         
         PC = TEXT_SEGMENT_START;
         instructionCount = 0;
         logs[200] = "Program loaded successfully";
+        InstructionNode* firstNode = new InstructionNode(PC);
+        setStageInstruction(Stage::FETCH, firstNode);
         return true;
     }
     catch (const std::exception &e) {
@@ -123,7 +137,12 @@ bool Simulator::loadProgram(const std::string &input) {
 }
 
 void Simulator::reset() {
-    while (!pipeline.empty()) pipeline.pop();
+    for (auto& [stage, node] : pipeline) {
+        if (node != nullptr) {
+            delete node;
+            node = nullptr;
+        }
+    }
     
     instructionRegisters = InstructionRegisters();
     initialiseRegisters(registers);
@@ -135,69 +154,140 @@ void Simulator::reset() {
     PC = TEXT_SEGMENT_START;
     running = false;
     stats = SimulationStats();
-    // branchPredictor = BranchPredictionUnit();
     instructionCount = 0;
 }
 
 void Simulator::applyDataForwarding(InstructionNode& node) {
     if (!isPipeline || !isDataForwarding) return;
-
+    
     for (const auto& dep : registerDependencies) {
         if (!dep.isWrite) continue;
-
-        if (dep.stage == Stage::EXECUTE) {
+        
+        if (dep.stage == Stage::EXECUTE || dep.stage == Stage::MEMORY) {
+            const uint32_t depOpcode = dep.opcode & 0x7F;
+            const bool isLoad = (depOpcode == 0x03);
+            
             if (node.rs1 != 0 && node.rs1 == dep.reg) {
-                uint32_t depOpcode = dep.opcode & 0x7F;
-                if (depOpcode == 0x03) {
+                if (dep.stage == Stage::EXECUTE && isLoad) {
                     node.stalled = true;
+                    stats.dataHazardStalls++;
+                    stats.dataHazards++;
+                } else if (dep.stage == Stage::MEMORY) {
+                    instructionRegisters.RA = instructionRegisters.RZ;
                 } else {
                     instructionRegisters.RA = instructionRegisters.RY;
                 }
             }
-            if (node.rs2 != 0 && node.rs2 == dep.reg) {
-                uint32_t depOpcode = dep.opcode & 0x7F;
-                if (depOpcode == 0x03) {
+            
+            if (node.instructionType == InstructionType::R && node.rs2 != 0 && node.rs2 == dep.reg) {
+                if (dep.stage == Stage::EXECUTE && isLoad) {
                     node.stalled = true;
+                    stats.dataHazardStalls++;
+                    stats.dataHazards++;
+                } else if (dep.stage == Stage::MEMORY) {
+                    instructionRegisters.RB = instructionRegisters.RZ;
                 } else {
                     instructionRegisters.RB = instructionRegisters.RY;
                 }
-            }
-        } else if (dep.stage == Stage::MEMORY) {
-            if (node.rs1 != 0 && node.rs1 == dep.reg) {
-                instructionRegisters.RA = instructionRegisters.RY;
-            }
-            if (node.rs2 != 0 && node.rs2 == dep.reg) {
-                instructionRegisters.RB = instructionRegisters.RY;
             }
         }
     }
 }
 
+bool Simulator::checkDependencies(const InstructionNode& node) const {
+    if (!isPipeline || isDataForwarding) {
+        return false;
+    }
+    
+    for (const auto& dep : registerDependencies) {
+        if (dep.isWrite && (dep.stage == Stage::EXECUTE || dep.stage == Stage::MEMORY)) {
+            if ((node.rs1 != 0 && node.rs1 == dep.reg) || (node.rs2 != 0 && node.rs2 == dep.reg)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void Simulator::updateDependencies(InstructionNode& node, Stage stage) {
+    auto it = std::find_if(
+        registerDependencies.begin(), 
+        registerDependencies.end(),
+        [&node](const RegisterDependency& dep) { return dep.pc == node.PC; }
+    );
+    
+    if (stage == Stage::DECODE && node.rd != 0) {
+        if (it != registerDependencies.end()) {
+            it->reg = node.rd;
+            it->stage = stage;
+            it->isWrite = true;
+            it->opcode = node.opcode;
+        } else {
+            RegisterDependency dep;
+            dep.reg = node.rd;
+            dep.pc = node.PC;
+            dep.isWrite = true;
+            dep.stage = stage;
+            dep.opcode = node.opcode;
+            registerDependencies.push_back(dep);
+        }
+    } else if (it != registerDependencies.end()) {
+        it->stage = stage;
+    }
+    
+    if (stage == Stage::WRITEBACK) {
+        registerDependencies.erase(
+            std::remove_if(
+                registerDependencies.begin(), 
+                registerDependencies.end(), 
+                [&node](const RegisterDependency& dep) { return dep.pc == node.PC; }
+            ),
+            registerDependencies.end()
+        );
+    }
+}
+
+bool Simulator::isPipelineEmpty() const {
+    for (const auto& pair : pipeline) {
+        if (pair.second != nullptr) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void Simulator::advancePipeline() {
-    std::stack<InstructionNode> newPipeline;
+    std::map<Stage, InstructionNode*> newPipeline;
     bool instructionProcessed = false;
-    bool isFlushed = false;
+    
+    for (auto& pair : pipeline) {
+        newPipeline[pair.first] = nullptr;
+    }
 
-    while (!pipeline.empty()) {
-        InstructionNode node = pipeline.top();
-        pipeline.pop();
+    const std::vector<Stage> stageOrder = {
+        Stage::WRITEBACK, Stage::MEMORY, Stage::EXECUTE, Stage::DECODE, Stage::FETCH
+    };
 
-        if (node.stalled) {
-            node.stalled = false;
-            newPipeline.push(node);
+    for (const auto& stage : stageOrder) {
+        InstructionNode* node = pipeline[stage];
+        if (node == nullptr) continue;
+
+        if (node->stalled) {
+            node->stalled = false;
+            newPipeline[node->stage] = new InstructionNode(*node);
             stats.stallBubbles++;
             instructionProcessed = true;
             continue;
         }
 
-        switch (node.stage) {
+        switch (node->stage) {
             case Stage::FETCH:
                 {
                     instructionCount++;
-                    fetchInstruction(&node, PC, running, textMap);
-                    if (running) {
-                        node.stage = Stage::DECODE;
-                        newPipeline.push(node);
+                    fetchInstruction(node, PC, running, textMap);
+                    if (running && node->instruction != 0) {
+                        node->stage = Stage::DECODE;
+                        newPipeline[Stage::DECODE] = new InstructionNode(*node);
                         instructionProcessed = true;
                     }
                 }
@@ -205,135 +295,109 @@ void Simulator::advancePipeline() {
                 
             case Stage::DECODE:
                 {
-                    decodeInstruction(&node, instructionRegisters, registers);
+                    decodeInstruction(node, instructionRegisters, registers);
+                    updateDependencies(*node, Stage::DECODE);
 
-                    if (node.rd != 0) {
-                        auto it = std::find_if(registerDependencies.begin(), registerDependencies.end(),[&node](const RegisterDependency& dep) { return dep.pc == node.PC; });
-                        if (it != registerDependencies.end()) {
-                            it->reg = node.rd;
-                            it->stage = Stage::DECODE;
-                            it->isWrite = true;
-                            it->opcode = node.opcode;
-                        } else {
-                            RegisterDependency dep;
-                            dep.reg = node.rd;
-                            dep.pc = node.PC;
-                            dep.isWrite = true;
-                            dep.stage = Stage::DECODE;
-                            dep.opcode = node.opcode;
-                            registerDependencies.push_back(dep);
-                        }
+                    if (checkDependencies(*node)) {
+                        node->stalled = true;
+                        stats.dataHazards++;
+                        newPipeline[Stage::DECODE] = new InstructionNode(*node);
+                        instructionProcessed = true;
+                        continue;
                     }
 
-                    if (isPipeline && !isDataForwarding) {
-                        for (const auto& dep : registerDependencies) {
-                            if (dep.isWrite && (dep.stage == Stage::EXECUTE || dep.stage == Stage::MEMORY)) {
-                                if ((node.rs1 != 0 && node.rs1 == dep.reg) || (node.rs2 != 0 && node.rs2 == dep.reg)) {
-                                    node.stalled = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (!node.stalled) {
-                        node.stage = Stage::EXECUTE;
-                    }
-                    newPipeline.push(node);
+                    node->stage = Stage::EXECUTE;
+                    newPipeline[Stage::EXECUTE] = new InstructionNode(*node);
                     instructionProcessed = true;
                 }
                 break;
                 
             case Stage::EXECUTE:
                 {
-                    applyDataForwarding(node);
-                    if (!node.stalled) {
-                        uint32_t oldPC = PC;
-                        executeInstruction(&node, instructionRegisters, registers, PC);
-                        if (oldPC != PC) {
-                            isFlushed = true;
-                            flushPipeline("Control hazard - branch/jump taken");
-                        }
-                        for (auto& dep : registerDependencies) {
-                            if (dep.pc == node.PC) {
-                                dep.stage = Stage::EXECUTE;
-                            }
-                        }
-                        node.stage = Stage::MEMORY;
+                    applyDataForwarding(*node);
+                    
+                    if (node->stalled) {
+                        newPipeline[Stage::EXECUTE] = new InstructionNode(*node);
+                        instructionProcessed = true;
+                        continue;
                     }
-                    newPipeline.push(node);
+                    
+                    uint32_t oldPC = PC;
+                    executeInstruction(node, instructionRegisters, registers, PC);
+                    updateDependencies(*node, Stage::EXECUTE);
+
+                    std::cout << textMap[node->PC].second << std::endl;
+                    std::cout << instructionRegisters.RA << " " << instructionRegisters.RB << std::endl;
+
+                    if (oldPC != PC) {
+                        flushPipeline("Control hazard - branch/jump taken");
+                        stats.controlHazards++;
+                        stats.controlHazardStalls += 2;
+                        newPipeline[Stage::FETCH] = nullptr;
+                        newPipeline[Stage::DECODE] = nullptr;
+                    }
+                    
+                    node->stage = Stage::MEMORY;
+                    newPipeline[Stage::MEMORY] = new InstructionNode(*node);
                     instructionProcessed = true;
                 }
                 break;
                 
             case Stage::MEMORY:
                 {
-                    memoryAccess(&node, instructionRegisters, registers, dataMap);
-
-                    for (auto& dep : registerDependencies) {
-                        if (dep.pc == node.PC) {
-                            dep.stage = Stage::MEMORY;
-                        }
-                    }
+                    memoryAccess(node, instructionRegisters, registers, dataMap);
+                    updateDependencies(*node, Stage::MEMORY);
                     
-                    node.stage = Stage::WRITEBACK;
-                    newPipeline.push(node);
+                    node->stage = Stage::WRITEBACK;
+                    newPipeline[Stage::WRITEBACK] = new InstructionNode(*node);
                     instructionProcessed = true;
                 }
                 break;
                 
             case Stage::WRITEBACK:
                 {
-                    writeback(&node, instructionRegisters, registers);
+                    writeback(node, instructionRegisters, registers);
+                    updateDependencies(*node, Stage::WRITEBACK);
 
-                    registerDependencies.erase(
-                        std::remove_if(registerDependencies.begin(), registerDependencies.end(), 
-                                      [&node](const RegisterDependency& dep) { return dep.pc == node.PC; }),
-                        registerDependencies.end()
-                    );
-                    
                     instructionProcessed = true;
-                    uint32_t opcode = node.opcode & 0x7F;
-                    if (opcode == 0x03 || opcode == 0x23) {
-                        stats.dataTransferInstructions++;
-                    }
-                    else if (opcode == 0x63 || opcode == 0x67 || opcode == 0x6F) {
-                        stats.controlInstructions++;
-                    }
-                    else {
-                        stats.aluInstructions++;
-                    }
+                    uint32_t opcode = node->opcode & 0x7F;
+                    if (opcode == 0x03) stats.dataTransferInstructions++;
+                    else if (opcode == 0x23) stats.dataTransferInstructions++;
+                    else if (opcode == 0x63) stats.controlInstructions++;
+                    else if (opcode == 0x67 || opcode == 0x6F) stats.controlInstructions++;
+                    else stats.aluInstructions++;
                 }
                 break;
         }
     }
-
-    bool fetchStageEmpty = getActiveStages()[Stage::FETCH].first;
-    if (fetchStageEmpty && !isFlushed && running && textMap.find(PC) != textMap.end()) {
-        InstructionNode newNode(PC);
-        newPipeline.push(newNode);
-    }
-    
-    while (!newPipeline.empty()) {
-        pipeline.push(newPipeline.top());
-        newPipeline.pop();
+    if (newPipeline[Stage::FETCH] == nullptr && textMap.find(PC) != textMap.end() && running) {
+        newPipeline[Stage::FETCH] = new InstructionNode(PC);
     }
 
-    if (running && pipeline.empty() && textMap.find(PC) == textMap.end()) {
+    for (auto& pair : pipeline) {
+        if (pair.second != nullptr) {
+            delete pair.second;
+        }
+    }
+    pipeline = newPipeline;
+    bool isEmpty = isPipelineEmpty();
+
+    if (isEmpty && !textMap.empty() && textMap.find(PC) == textMap.end()) {
         running = false;
     }
 
     if (instructionProcessed) {
         stats.totalCycles++;
-    }
-    
-    if (instructionCount > 0) {
-        stats.cyclesPerInstruction = static_cast<double>(stats.totalCycles) / instructionCount;
+        if (instructionCount > 0) {
+            stats.cyclesPerInstruction = static_cast<double>(stats.totalCycles) / instructionCount;
+        }
     }
 }
 
 bool Simulator::step() {
-    if (!running && pipeline.empty()) {
+    bool isEmpty = isPipelineEmpty();
+    
+    if (!running && isEmpty) {
         logs[404] = "Cannot step - simulator is not running";
         return false;
     }
@@ -341,10 +405,18 @@ bool Simulator::step() {
     try {
         advancePipeline();
         stats.instructionsExecuted = instructionCount;
-        
-        if (!running && pipeline.empty()) {
+        isEmpty = isPipelineEmpty();
+        if (!running && isEmpty) {
             return false;
         }
+
+        if (textMap.find(PC) != textMap.end()) {
+            running = true;
+            if (pipeline[Stage::FETCH] == nullptr && running) {
+                setStageInstruction(Stage::FETCH, new InstructionNode(PC));
+            }
+        }
+
         return true;
     }
     catch (const std::runtime_error &e) {
@@ -355,13 +427,15 @@ bool Simulator::step() {
 }
 
 void Simulator::run() {
-    if (!running) {
+    bool isEmpty = isPipelineEmpty();
+    
+    if (!running && isEmpty) {
         logs[404] = "Cannot run - simulator is not running";
         return;
     }
     
     int stepCount = 0;
-    while (running || !pipeline.empty()) {
+    while (running || !isEmpty) {
         if (!step())
             break;
             
@@ -370,6 +444,7 @@ void Simulator::run() {
             logs[400] = "Program execution terminated - exceeded maximum step count (" + std::to_string(MAX_STEPS) + ")";
             break;
         }
+        isEmpty = isPipelineEmpty();
     }
     
     logs[200] = "Simulation completed. Total clock cycles: " + std::to_string(stats.totalCycles) + ", Total steps executed: " + std::to_string(stepCount);
@@ -404,11 +479,10 @@ std::map<Stage, std::pair<bool, uint32_t>> Simulator::getActiveStages() const {
     activeStages[Stage::MEMORY] = std::make_pair(false, 0);
     activeStages[Stage::WRITEBACK] = std::make_pair(false, 0);
 
-    std::stack<InstructionNode> tempPipeline = pipeline;
-    while (!tempPipeline.empty()) {
-        InstructionNode node = tempPipeline.top();
-        tempPipeline.pop();
-        activeStages[node.stage] = std::make_pair(true, node.PC);
+    for (const auto& [stage, node] : pipeline) {
+        if (node != nullptr) {
+            activeStages[stage] = std::make_pair(true, node->PC);
+        }
     }
     return activeStages;
 }
@@ -426,21 +500,16 @@ uint32_t Simulator::getCycles() const {
 }
 
 void Simulator::flushPipeline(const std::string& reason) {
-    if (!isPipeline) {
-        return;
+    if (!isPipeline) return;
+    
+    if (pipeline[Stage::FETCH] != nullptr) {
+        delete pipeline[Stage::FETCH];
+        pipeline[Stage::FETCH] = nullptr;
     }
-
-    std::stack<InstructionNode> tempPipeline;
-    while (!pipeline.empty()) {
-        InstructionNode node = pipeline.top();
-        pipeline.pop();
-        if (node.stage == Stage::EXECUTE || node.stage == Stage::MEMORY || node.stage == Stage::WRITEBACK) {
-            tempPipeline.push(node);
-        }
-    }
-    while (!tempPipeline.empty()) {
-        pipeline.push(tempPipeline.top());
-        tempPipeline.pop();
+    
+    if (pipeline[Stage::DECODE] != nullptr) {
+        delete pipeline[Stage::DECODE];
+        pipeline[Stage::DECODE] = nullptr;
     }
     
     stats.pipelineFlushes++;

@@ -65,6 +65,61 @@ namespace riscv {
 
     std::unordered_map<int, std::string> logs;
 
+// TODO: Experimental
+    struct BTBEntry {
+        uint32_t targetAddress;
+        bool valid;
+        
+        BTBEntry() : targetAddress(0), valid(false) {}
+        BTBEntry(uint32_t target) : targetAddress(target), valid(true) {}
+    };
+
+// TODO: Experimental
+    struct BranchPredictor {
+        std::unordered_map<uint32_t, bool> PHT;
+        std::unordered_map<uint32_t, BTBEntry> BTB;
+        
+        uint32_t totalPredictions;
+        uint32_t correctPredictions;
+        uint32_t mispredictions;
+        
+        BranchPredictor() : totalPredictions(0), correctPredictions(0), mispredictions(0) {}
+        
+        bool predict(uint32_t branchPC) {
+            return PHT.count(branchPC) > 0 ? PHT[branchPC] : false;
+        }
+        
+        uint32_t getTarget(uint32_t branchPC) {
+            return BTB.count(branchPC) > 0 && BTB[branchPC].valid ? BTB[branchPC].targetAddress : 0;
+        }
+        
+        void update(uint32_t branchPC, bool taken, uint32_t targetAddress) {
+            totalPredictions++;
+            bool predicted = predict(branchPC);
+            PHT[branchPC] = taken;
+            if (taken) {
+                BTB[branchPC] = BTBEntry(targetAddress);
+            }
+            if (predicted == taken) {
+                correctPredictions++;
+            } else {
+                mispredictions++;
+            }
+        }
+        
+        double getAccuracy() const {
+            return totalPredictions > 0 ? static_cast<double>(correctPredictions) / totalPredictions * 100.0 : 0.0;
+        }
+        
+        void reset() {
+            PHT.clear();
+            BTB.clear();
+            totalPredictions = 0;
+            correctPredictions = 0;
+            mispredictions = 0;
+        }
+    };
+
     struct Token {
         TokenType type;
         std::string value;
@@ -114,7 +169,6 @@ namespace riscv {
         uint32_t reg;
         uint32_t pc;
         uint32_t opcode;
-        bool isWrite;
         Stage stage;
     };
 

@@ -159,13 +159,13 @@ or x7,x5,x6 # 0110011-110-0000000-00111-00101-00110-NULL`);
       </Link>
       <div className="fixed top-4 mx-auto flex gap-2 bg-white p-2 rounded-lg shadow-md z-[999]">
         <div
-          className={`cursor-pointer px-4 py-2 rounded-md transition ${activeTab === "editor" ? "bg-gray-200 font-semibold" : "text-gray-500"}`}
+          className={`cursor-pointer text-center w-24 py-2 rounded-md transition ${activeTab === "editor" ? "bg-gray-200 font-semibold" : "text-gray-500"}`}
           onClick={() => setActiveTab("editor")}
         >
           Editor
         </div>
         <div
-          className={`cursor-pointer px-4 py-2 rounded-md transition ${activeTab === "simulator" ? "bg-gray-200 font-semibold" : "text-gray-500"}`}
+          className={`cursor-pointer text-center w-24 py-2 rounded-md transition ${activeTab === "simulator" ? "bg-gray-200 font-semibold" : "text-gray-500"}`}
           onClick={() => setActiveTab("simulator")}
         >
           Simulator

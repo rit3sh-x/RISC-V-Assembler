@@ -85,7 +85,7 @@ inline void fetchInstruction(InstructionNode* node, uint32_t& PC, bool& running,
     if (!isValidAddress(PC, 4)) {
         std::ostringstream oss;
         oss << "Fetch error: Invalid PC address 0x" << std::hex << PC;
-        logs[400] = oss.str();
+        logs[404] = oss.str();
         throw std::runtime_error(oss.str());
     }
     auto it = textMap.find(PC);
@@ -137,6 +137,10 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
         case InstructionType::UJ:
             node->rd = (node->instruction >> 7) & 0x1F;
             break;
+            
+        default:
+            logs[404] = "Invalid instruction type in decodeInstruction";
+            throw std::runtime_error(logs[404]);
     }
 
     instructionRegisters.RA = (node->rs1 != UINT32_MAX) ? registers[node->rs1] : 0;
@@ -183,6 +187,10 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
             instructionRegisters.RB = imm;
             break;
         }
+        
+        default:
+            logs[404] = "Invalid instruction type in decodeInstruction register setup";
+            throw std::runtime_error(logs[404]);
     }
 }
 
@@ -361,6 +369,9 @@ inline void writeback(InstructionNode* node, InstructionRegisters& instructionRe
             case InstructionType::SB:
             case InstructionType::S:
                 break;
+            default:
+                logs[404] = "Invalid instruction type in writeback";
+                throw std::runtime_error(logs[404]);
         }
     }
     registers[0] = 0;
@@ -440,8 +451,8 @@ inline std::string parseInstructions(uint32_t instHex) {
             return ss.str();
         }
     }
-    logs[400] = "Invalid instruction: 0x" + std::to_string(instHex);
-    throw std::runtime_error(logs[400]);
+    logs[404] = "Invalid instruction: 0x" + std::to_string(instHex);
+    throw std::runtime_error(logs[404]);
 }
 
 #endif

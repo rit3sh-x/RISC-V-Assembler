@@ -149,7 +149,8 @@ inline uint32_t Assembler::generateRType(const std::string &opcode, const std::v
     int32_t rs2 = getRegisterNumber(operands[2]);
     
     if (rd < 0 || rs1 < 0 || rs2 < 0 || rd > 31 || rs1 > 31 || rs2 > 31) {
-        throw std::runtime_error("Invalid register in R-type instruction");
+        logs[404] = "Invalid register in R-type instruction";
+        throw std::runtime_error(logs[404]);
     }
     
     return (funct7 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | opcodeVal;
@@ -157,7 +158,7 @@ inline uint32_t Assembler::generateRType(const std::string &opcode, const std::v
 
 inline bool Assembler::generateIType(const std::string &opcode, const std::vector<std::string> &operands, uint32_t currentAddress) {
     if (operands.size() != 3) {
-        reportError("I-type instruction requires 3 operands");
+        logs[404] = "I-type instruction requires 3 operands";
         return false;
     }
     
@@ -186,17 +187,17 @@ inline bool Assembler::generateIType(const std::string &opcode, const std::vecto
     }
     
     if (rd < 0 || rs1 < 0) {
-        reportError("Invalid register in I-type instruction");
+        logs[404] = "Invalid register in I-type instruction";
         return false;
     }
     
     if ((opcode == "slli" || opcode == "srli" || opcode == "srai") && (imm < 0 || imm > 31)) {
-        reportError("Shift amount must be between 0 and 31");
+        logs[404] = "Shift amount must be between 0 and 31";
         return false;
     }
     
     if (imm < -2048 || imm > 2047) {
-        reportError("Immediate value out of range for I-type instruction (-2048 to 2047)");
+        logs[404] = "Immediate value out of range for I-type instruction (-2048 to 2047)";
         return false;
     }
     
@@ -220,7 +221,10 @@ inline uint32_t Assembler::generateSType(const std::string &opcode, const std::v
     
     if (operands.size() == 2) {
         std::string offset, reg;
-        if (!isMemory(operands[1], offset, reg)) throw std::runtime_error("Invalid memory operand format");
+        if (!isMemory(operands[1], offset, reg)) {
+            logs[404] = "Invalid memory operand format";
+            throw std::runtime_error(logs[404]);
+        }
         imm = parseImmediate(offset);
         rs1 = getRegisterNumber(reg);
     }
@@ -228,10 +232,15 @@ inline uint32_t Assembler::generateSType(const std::string &opcode, const std::v
         imm = parseImmediate(operands[1]);
         rs1 = getRegisterNumber(operands[2]);
     }
-    else throw std::runtime_error("Invalid number of operands for S-type instruction");
+    else {
+        logs[404] = "Invalid number of operands for S-type instruction";
+        throw std::runtime_error(logs[404]);
+    }
     
-    if (rs1 < 0 || rs2 < 0 || rs1 > 31 || rs2 > 31 || imm < -2048 || imm > 2047) 
-        throw std::runtime_error("Invalid parameter in S-type instruction");
+    if (rs1 < 0 || rs2 < 0 || rs1 > 31 || rs2 > 31 || imm < -2048 || imm > 2047) {
+        logs[404] = "Invalid parameter in S-type instruction";
+        throw std::runtime_error(logs[404]);
+    }
     
     uint32_t imm_11_5 = ((imm >> 5) & 0x7F) << 25;
     uint32_t imm_4_0 = (imm & 0x1F) << 7;
@@ -252,8 +261,10 @@ inline uint32_t Assembler::generateSBType(const std::string &opcode, const std::
                         ? parseImmediate(operands[2])
                         : calculateRelativeOffset(currentAddress, std::stoul(operands[2], nullptr, 0));
     
-    if (rs1 < 0 || rs2 < 0 || rs1 > 31 || rs2 > 31 || offset < -4096 || offset > 4095 || offset & 1)
-        throw std::runtime_error("Invalid parameter in SB-type instruction");
+    if (rs1 < 0 || rs2 < 0 || rs1 > 31 || rs2 > 31 || offset < -4096 || offset > 4095 || offset & 1) {
+        logs[404] = "Invalid parameter in SB-type instruction";
+        throw std::runtime_error(logs[404]);
+    }
     
     return ((offset < 0 ? 1 : (offset >> 12) & 0x1) << 31) | ((offset >> 11 & 0x1) << 7) | 
            ((offset >> 5 & 0x3F) << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | 
@@ -262,7 +273,7 @@ inline uint32_t Assembler::generateSBType(const std::string &opcode, const std::
 
 inline bool Assembler::generateUType(const std::string &opcode, const std::vector<std::string> &operands, uint32_t currentAddress) {
     if (operands.size() != 2) {
-        reportError("U-type instruction requires 2 operands");
+        logs[404] = "U-type instruction requires 2 operands";
         return false;
     }
     
@@ -273,7 +284,7 @@ inline bool Assembler::generateUType(const std::string &opcode, const std::vecto
     int32_t imm = parseImmediate(operands[1]);
     
     if (rd < 0 || imm < 0 || imm > 0xFFFFF) {
-        reportError("Invalid parameter in U-type instruction");
+        logs[404] = "Invalid parameter in U-type instruction";
         return false;
     }
     
@@ -293,8 +304,10 @@ inline uint32_t Assembler::generateUJType(const std::string &opcode, const std::
                         ? parseImmediate(operands[1])
                         : calculateRelativeOffset(currentAddress, std::stoul(operands[1], nullptr, 0));
     
-    if (rd < 0 || rd > 31 || offset < -1048576 || offset > 1048575 || offset & 1)
-        throw std::runtime_error("Invalid parameter in UJ-type instruction");
+    if (rd < 0 || rd > 31 || offset < -1048576 || offset > 1048575 || offset & 1) {
+        logs[404] = "Invalid parameter in UJ-type instruction";
+        throw std::runtime_error(logs[404]);
+    }
     
     return (((offset >> 20) & 0x1) << 31) | (((offset >> 1) & 0x3FF) << 21) | (((offset >> 11) & 0x1) << 20) |
            (((offset >> 12) & 0xFF) << 12) | (rd << 7) | opcodeVal;
@@ -302,12 +315,16 @@ inline uint32_t Assembler::generateUJType(const std::string &opcode, const std::
 
 inline void Assembler::reportError(const std::string &message) const {
     logs[404] = "ERROR: Assembler Error: " + message;
+    throw std::runtime_error(logs[404]);
     ++errorCount;
 }
 
 inline uint32_t Assembler::calculateRelativeOffset(uint32_t currentAddress, uint32_t targetAddress) const {
     int32_t offset = static_cast<int32_t>(targetAddress - currentAddress);
-    if (currentAddress == 0 || targetAddress == 0 || offset < -4096 || offset > 4095) throw std::runtime_error("Invalid offset calculation");
+    if (currentAddress == 0 || targetAddress == 0 || offset < -4096 || offset > 4095) {
+        logs[404] = "Invalid offset calculation";
+        throw std::runtime_error(logs[404]);
+    }
     return offset;
 }
 

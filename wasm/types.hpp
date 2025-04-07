@@ -21,6 +21,17 @@ namespace riscv {
     inline constexpr int MAX_STEPS = 100000;
 
     enum class Stage { FETCH, DECODE, EXECUTE, MEMORY, WRITEBACK };
+
+    inline std::string stageToString(Stage stage) {
+        switch (stage) {
+            case Stage::FETCH: return "FETCH";
+            case Stage::DECODE: return "DECODE";
+            case Stage::EXECUTE: return "EXECUTE";
+            case Stage::MEMORY: return "MEMORY";
+            case Stage::WRITEBACK: return "WRITEBACK";
+            default: return "UNKNOWN";
+        }
+    }
     
     enum class InstructionType { R, I, S, SB, U, UJ };
 
@@ -65,7 +76,6 @@ namespace riscv {
 
     std::unordered_map<int, std::string> logs;
 
-// TODO: Experimental
     struct BTBEntry {
         uint32_t targetAddress;
         bool valid;
@@ -74,7 +84,6 @@ namespace riscv {
         BTBEntry(uint32_t target) : targetAddress(target), valid(true) {}
     };
 
-// TODO: Experimental
     struct BranchPredictor {
         std::unordered_map<uint32_t, bool> PHT;
         std::unordered_map<uint32_t, BTBEntry> BTB;
@@ -91,6 +100,10 @@ namespace riscv {
         
         uint32_t getTarget(uint32_t branchPC) {
             return BTB.count(branchPC) > 0 && BTB[branchPC].valid ? BTB[branchPC].targetAddress : 0;
+        }
+
+        bool getPHT(uint32_t branchPC) const {
+            return PHT.count(branchPC) > 0 ? PHT.at(branchPC) : false;
         }
         
         void update(uint32_t branchPC, bool taken, uint32_t targetAddress) {

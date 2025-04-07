@@ -36,6 +36,7 @@ inline bool Lexer::isLabel(const std::string& token) {
 inline Token Lexer::classifyToken(const std::string& token, int lineNumber) {
     std::string trimmed = trim(token);
     if (trimmed.empty()) {
+        logs[404] = "Empty token encountered on line " + std::to_string(lineNumber);
         return {TokenType::UNKNOWN, "", lineNumber};
     }
     if (isRegister(trimmed)) {
@@ -53,11 +54,13 @@ inline Token Lexer::classifyToken(const std::string& token, int lineNumber) {
     if (isLabel(trimmed) && trimmed.length() > 1) {
         return {TokenType::LABEL, trimmed.substr(0, trimmed.length() - 1), lineNumber};
     }
+    logs[404] = "Unknown token type on line " + std::to_string(lineNumber) + ": " + trimmed;
     return {TokenType::UNKNOWN, trimmed, lineNumber};
 }
 
 inline void Lexer::reportError(const std::string& message, int lineNumber) {
     logs[404] = "Lexer Error on Line " + std::to_string(lineNumber) + ": " + message;
+    throw std::runtime_error(logs[404]);
 }
 
 inline std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineNumber) {
@@ -110,6 +113,7 @@ inline std::vector<Token> Lexer::tokenizeLine(const std::string& line, int lineN
                     tokens.push_back({TokenType::IMMEDIATE, offset, lineNumber});
                     tokens.push_back({TokenType::REGISTER, reg, lineNumber});
                 } else {
+                    logs[404] = "Invalid memory reference format on line " + std::to_string(lineNumber) + ": " + currentToken;
                     tokens.push_back(classifyToken(currentToken, lineNumber));
                 }
                 currentToken.clear();

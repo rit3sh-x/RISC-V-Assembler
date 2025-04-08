@@ -61,8 +61,6 @@ public:
     uint32_t getCycles() const;
     InstructionRegisters getInstructionRegisters() const;
     std::unordered_map<int, std::string> getLogs();
-    double getBranchPredictionAccuracy() const;
-    uint32_t getBranchMispredictions() const;
 };
 
 Simulator::Simulator() : PC(TEXT_SEGMENT_START),
@@ -633,14 +631,6 @@ std::unordered_map<int, std::string> Simulator::getLogs() {
 
 InstructionRegisters Simulator::getInstructionRegisters() const {
     return instructionRegisters;
-}
-
-double Simulator::getBranchPredictionAccuracy() const {
-    return branchPredictor.getAccuracy();
-}
-
-uint32_t Simulator::getBranchMispredictions() const {
-    return branchPredictor.mispredictions;
 }
 
 #endif

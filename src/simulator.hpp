@@ -1,142 +1,122 @@
 #ifndef SIMULATOR_HPP
 #define SIMULATOR_HPP
 
+// TODO : uhhhh.... Branch Predictor && Follower
+
 #include <vector>
 #include <string>
 #include <map>
 #include <unordered_map>
 #include <cstdint>
-#include <sstream>
 #include <stdexcept>
-#include <queue>
-#include <fstream>
-#include <iostream>
+#include <iomanip>
 #include "types.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
 #include "assembler.hpp"
 #include "execution.hpp"
-#include <iomanip>
 
-class Simulator
-{
+class Simulator {
 private:
     uint32_t PC;
     uint32_t registers[NUM_REGISTERS];
+
     std::unordered_map<uint32_t, uint8_t> dataMap;
     std::map<uint32_t, std::pair<uint32_t, std::string>> textMap;
-    std::map<uint32_t, bool> conditionalJumps;
-    std::map<uint32_t, uint32_t> unconditionalJumps;
 
-    std::queue<InstructionNode> pipeline;
+    std::map<Stage, InstructionNode*> pipeline;
     InstructionRegisters instructionRegisters;
     InstructionRegisters followedInstructionRegisters;
-    std::map<Stage, bool> activeStages;
 
     bool running;
     bool isPipeline;
     bool isDataForwarding;
-    bool isPrintingRegisters;
-    bool isPrintingPipelineRegisters;
-    bool isSpecificInstructionFollowed;
-    bool isBranchPredicting;
-    bool hasStall;
+    bool isBranchPrediction;
+    bool isFollowing;
+    uint32_t followedInstruction;
 
-    SimulationStats stats = SimulationStats();
-    BranchPredictionUnit branchPredictor = BranchPredictionUnit();
-    uint32_t specificFollowedInstruction;
+    SimulationStats stats;
+    std::vector<RegisterDependency> registerDependencies;
+    BranchPredictor branchPredictor;
+
     uint32_t instructionCount;
-    uint32_t followedInstructionPC;
-    Stage followedInstructionStage;
-    bool isFollowedInstructionActive;
 
     void advancePipeline();
     void flushPipeline(const std::string& reason = "");
+    void applyDataForwarding(InstructionNode& node);
+    bool checkDependencies(const InstructionNode& node) const;
+    void updateDependencies(InstructionNode& node, Stage stage);
+    void setStageInstruction(Stage stage, InstructionNode* node);
+    bool checkLoadUseHazard(const InstructionNode& node) const;
+    bool isPipelineEmpty() const;
 
 public:
     Simulator();
-
     bool loadProgram(const std::string &input);
     bool step();
     void run();
     void reset();
-
-    void setIsPipeline();
-    void setIsDataForwarding();
-    void setIsPrintingRegisters();
-    void setIsPrintingPipelineRegisters();
-    void setIsSpecificInstructionFollowed(uint32_t);
-    void setIsBranchPredicting();
-    void setEnvironment(bool pipelineMode, bool dataForwarding,bool printingRegisters, bool printingPipelineRegisters, bool specificInstructionFollowed, bool branchPredicting);
-    void writeStatsToFile(const std::string& filename) const;
-
+    void setEnvironment(bool pipeline, bool dataForwarding, bool branchPrediction, uint32_t instruction);
     bool isRunning() const;
     uint32_t getPC() const;
     const uint32_t *getRegisters() const;
-    SimulationStats getStats() const;
-    std::map<Stage, bool> getActiveStages() const;
+    uint32_t getStalls() const;
+    std::map<Stage, std::pair<bool, uint32_t>> getActiveStages() const;
     std::unordered_map<uint32_t, uint8_t> getDataMap() const;
     std::map<uint32_t, std::pair<uint32_t, std::string>> getTextMap() const;
-
-    size_t queueSize() const;
     uint32_t getCycles() const;
-    bool hasStallCondition() const;
+    InstructionRegisters getInstructionRegisters() const;
+    InstructionRegisters getFollowedInstructionRegisters() const;
 };
 
 Simulator::Simulator() : PC(TEXT_SEGMENT_START),
                          running(false),
-                         isPipeline(false),
-                         isDataForwarding(false),
-                         isPrintingRegisters(false),
-                         isPrintingPipelineRegisters(false),
-                         isSpecificInstructionFollowed(false),
-                         isBranchPredicting(false),
-                         hasStall(false),
-                         specificFollowedInstruction(UINT32_MAX),
+                         isPipeline(true),
+                         isDataForwarding(true),
+                         isBranchPrediction(false),
+                         isFollowing(false),
+                         followedInstruction(UINT32_MAX),
+                         stats(SimulationStats()),
                          instructionCount(0),
-                         followedInstructionPC(0),
-                         followedInstructionStage(Stage::FETCH),
-                         isFollowedInstructionActive(false)
+                         branchPredictor(BranchPredictor())
 {
     initialiseRegisters(registers);
-    activeStages[Stage::FETCH] = false;
-    activeStages[Stage::DECODE] = false;
-    activeStages[Stage::EXECUTE] = false;
-    activeStages[Stage::MEMORY] = false;
-    activeStages[Stage::WRITEBACK] = false;
+    pipeline[Stage::FETCH] = nullptr;
+    pipeline[Stage::DECODE] = nullptr;
+    pipeline[Stage::EXECUTE] = nullptr;
+    pipeline[Stage::MEMORY] = nullptr;
+    pipeline[Stage::WRITEBACK] = nullptr;
+    instructionRegisters = InstructionRegisters();
+    followedInstructionRegisters = InstructionRegisters();
+}
+
+void Simulator::setStageInstruction(Stage stage, InstructionNode* node) {
+    if (pipeline[stage] != nullptr) {
+        delete pipeline[stage];
+    }
+    pipeline[stage] = node;
 }
 
 bool Simulator::loadProgram(const std::string &input) {
     try {
-        bool was_pipeline = isPipeline;
-        bool was_dataForwarding = isDataForwarding;
-        bool was_printingRegisters = isPrintingRegisters;
-        bool was_printingPipelineRegisters = isPrintingPipelineRegisters;
-        bool was_specificInstructionFollowed = isSpecificInstructionFollowed;
-        uint32_t saved_specificFollowedInstruction = specificFollowedInstruction;
-        bool was_branchPredicting = isBranchPredicting;
+        bool wasPipeline = isPipeline;
+        bool wasDataForwarding = isDataForwarding;
         
         reset();
 
-        isPipeline = was_pipeline;
-        isDataForwarding = was_dataForwarding;
-        isPrintingRegisters = was_printingRegisters;
-        isPrintingPipelineRegisters = was_printingPipelineRegisters;
-        isSpecificInstructionFollowed = was_specificInstructionFollowed;
-        specificFollowedInstruction = saved_specificFollowedInstruction;
-        isBranchPredicting = was_branchPredicting;
-        
+        isPipeline = wasPipeline;
+        isDataForwarding = wasDataForwarding;
         running = true;
 
         std::vector<std::vector<Token>> tokenizedLines = Lexer::tokenize(input);
         if (tokenizedLines.empty()) {
-            logs[300] = "Empty Code";
+            std::cerr << RED << "Error: No tokens generated from input" << RESET << std::endl;
             return false;
         }
 
         Parser parser(tokenizedLines);
         if (!parser.parse()) {
-            logs[404] = "Parsing failed with " + std::to_string(parser.getErrorCount()) + " errors";
+            throw std::runtime_error("Parsing failed with " + std::to_string(parser.getErrorCount()) + " errors");
             return false;
         }
 
@@ -145,575 +125,543 @@ bool Simulator::loadProgram(const std::string &input) {
 
         Assembler assembler(symbolTable, parsedInstructions);
         if (!assembler.assemble()) {
-            logs[404] = "Assembly failed with " + std::to_string(assembler.getErrorCount()) + " errors";
+            throw std::runtime_error("Assembly failed with " + std::to_string(assembler.getErrorCount()) + " errors");
             return false;
         }
 
         for (const auto &[address, value] : assembler.getMachineCode()) {
             if (address >= DATA_SEGMENT_START) {
                 dataMap[address] = static_cast<uint8_t>(value);
-            }
-            else {
+            } else {
                 textMap[address] = std::make_pair(value, parseInstructions(value));
-                uint32_t opcode = value & 0x7F;
-                if (opcode == 0x63) {
-                    conditionalJumps[address] = false;
-                }
-                else if (opcode == 0x6F || opcode == 0x67) {
-                    unconditionalJumps[address] = 0;
-                }
             }
         }
+        
         PC = TEXT_SEGMENT_START;
         instructionCount = 0;
-        logs[200] = "Program loaded successfully";
+        std::cout << GREEN << "Program loaded successfully" << RESET << std::endl;
+        InstructionNode* firstNode = new InstructionNode(PC);
+        setStageInstruction(Stage::FETCH, firstNode);
         return true;
     }
     catch (const std::exception &e) {
-        logs[404] = "Error: " + std::string(e.what());
+        std::cerr << RED << "Error: " << e.what() << RESET << std::endl;
         return false;
     }
 }
 
 void Simulator::reset() {
-    while (!pipeline.empty()) {
-        pipeline.pop();
+    for (auto& [stage, node] : pipeline) {
+        if (node != nullptr) {
+            delete node;
+            node = nullptr;
+        }
     }
+    
     instructionRegisters = InstructionRegisters();
-    followedInstructionRegisters = InstructionRegisters();
     initialiseRegisters(registers);
+    registerDependencies.clear();
     dataMap.clear();
+    textMap.clear();
+    
     PC = TEXT_SEGMENT_START;
     running = false;
-    textMap.clear();
-    conditionalJumps.clear();
-    unconditionalJumps.clear();
-    logs.clear();
     stats = SimulationStats();
-    branchPredictor = BranchPredictionUnit();
+    branchPredictor.reset();
     instructionCount = 0;
-    followedInstructionPC = 0;
-    followedInstructionStage = Stage::FETCH;
-    isFollowedInstructionActive = false;
-    hasStall = false;
-    for (auto &stage : activeStages) {
-        stage.second = false;
+}
+
+void Simulator::applyDataForwarding(InstructionNode& node) {
+    if (!isPipeline || !isDataForwarding) return;
+
+    for (const auto& dep : registerDependencies) {
+        if (dep.stage == Stage::MEMORY) {
+            if (node.rs1 != 0 && node.rs1 == dep.reg) {
+                instructionRegisters.RA = instructionRegisters.RZ;
+                std::cout << YELLOW << "Data Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" << RESET << std::endl;
+            }
+            if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg) {
+                instructionRegisters.RB = instructionRegisters.RZ;
+                std::cout << YELLOW << "Data Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" << RESET << std::endl;
+            }
+        }
+    }
+
+    for (const auto& dep : registerDependencies) {
+        if (dep.stage == Stage::EXECUTE) {
+            const uint32_t opcode = dep.opcode & 0x7F;
+            const bool isLoad = (opcode == 0x03);
+            if (!isLoad) {
+                if (node.rs1 != 0 && node.rs1 == dep.reg) {
+                    instructionRegisters.RA = instructionRegisters.RY;
+                    std::cout << YELLOW << "Data Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" << RESET << std::endl;
+                }
+                if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg) {
+                    instructionRegisters.RB = instructionRegisters.RY;
+                    std::cout << YELLOW << "Data Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" << RESET << std::endl;
+                }
+            }
+        }
     }
 }
 
-void Simulator::advancePipeline() {
-    std::queue<InstructionNode> tempPipeline;
-    bool instructionProcessed = false;
-    hasStall = false;
+bool Simulator::checkDependencies(const InstructionNode& node) const {
+    if (!isPipeline || isDataForwarding) {
+        return false;
+    }
     
-    for (auto &stage : activeStages) stage.second = false;
-
-    bool injectNewInstruction = false;
-    if (!isPipeline) {
-        injectNewInstruction = pipeline.empty() && running && textMap.find(PC) != textMap.end();
-    } else {
-        bool anyStall = false;
-        std::queue<InstructionNode> checkQueue = pipeline;
-        while (!checkQueue.empty()) {
-            if (checkQueue.front().stalled) {
-                anyStall = true;
-                break;
+    for (const auto& dep : registerDependencies) {
+        if (dep.stage == Stage::EXECUTE || dep.stage == Stage::MEMORY) {
+            if ((node.rs1 != 0 && node.rs1 == dep.reg) || 
+                ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg)) {
+                std::cout << YELLOW << "Data Hazard: Instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ") depends on reg " + std::to_string(dep.reg) + " in " + stageToString(dep.stage) << RESET << std::endl;
+                return true;
             }
-            checkQueue.pop();
         }
-        injectNewInstruction = !anyStall && !hasStall && running && textMap.find(PC) != textMap.end();
+    }
+    return false;
+}
+
+bool Simulator::checkLoadUseHazard(const InstructionNode& node) const {
+    if (!isPipeline || !isDataForwarding) {
+        return false;
     }
 
-    if (injectNewInstruction) {
-        InstructionNode newNode(PC);
-        pipeline.push(newNode);
+    if (pipeline.find(Stage::MEMORY) != pipeline.end() && pipeline.at(Stage::MEMORY) != nullptr) {
+        InstructionNode* memNode = pipeline.at(Stage::MEMORY);
+        uint32_t memOpcode = memNode->opcode & 0x7F;
+        bool isLoad = (memOpcode == 0x03);
+        if (isLoad && memNode->rd != 0 &&
+            ((node.rs1 != 0 && node.rs1 == memNode->rd) || ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == memNode->rd))) {
+            std::cout << GREEN << "Load-Use Hazard: Instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ") depends on load at PC=" + std::to_string(memNode->PC) + " (rd=" + std::to_string(memNode->rd) + ")" << RESET << std::endl;
+            return true;
+        }
+    }
+    return false;
+}
+
+void Simulator::updateDependencies(InstructionNode& node, Stage stage) {
+    auto it = std::find_if(
+        registerDependencies.begin(), 
+        registerDependencies.end(),
+        [&node](const RegisterDependency& dep) { return dep.pc == node.PC; }
+    );
+    
+    if (stage == Stage::DECODE && node.rd != 0) {
+        if (it != registerDependencies.end()) {
+            it->reg = node.rd;
+            it->stage = stage;
+            it->opcode = node.opcode;
+        } else {
+            RegisterDependency dep;
+            dep.reg = node.rd;
+            dep.pc = node.PC;
+            dep.stage = stage;
+            dep.opcode = node.opcode;
+            registerDependencies.push_back(dep);
+        }
+    } else if (it != registerDependencies.end()) {
+        it->stage = stage;
+    }
+    
+    if (stage == Stage::WRITEBACK) {
+        registerDependencies.erase(
+            std::remove_if(
+                registerDependencies.begin(), 
+                registerDependencies.end(), 
+                [&node](const RegisterDependency& dep) { return dep.pc == node.PC; }
+            ),
+            registerDependencies.end()
+        );
+    }
+}
+
+bool Simulator::isPipelineEmpty() const {
+    for (const auto& pair : pipeline) {
+        if (pair.second != nullptr) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void Simulator::advancePipeline() {
+    std::map<Stage, InstructionNode*> newPipeline;
+    bool instructionProcessed = false;
+    bool stalled = false;
+    
+    for (auto& pair : pipeline) {
+        newPipeline[pair.first] = nullptr;
     }
 
-    std::queue<InstructionNode> originalPipeline = pipeline;
-    while (!pipeline.empty()) {
-        InstructionNode node = pipeline.front();
-        pipeline.pop();
+    const std::vector<Stage> stageOrder = {
+        Stage::WRITEBACK, Stage::MEMORY, Stage::EXECUTE, Stage::DECODE, Stage::FETCH
+    };
 
-        if (node.stalled) {
-            node.stalled = false;
-            tempPipeline.push(node);
-            hasStall = true;
-            stats.stallBubbles++;
-            
-            if (isPrintingPipelineRegisters) {
-                std::cout << "STALL: Processing stalled instruction at PC 0x" 
-                      << std::hex << node.PC << std::dec << std::endl;
+    for (const auto& stage : stageOrder) {
+        InstructionNode* node = pipeline[stage];
+        if (node == nullptr) continue;
+
+        if (node->stalled) {
+            node->stalled = false;
+
+            switch (node->stage) {
+                case Stage::DECODE:
+                    node->stage = Stage::EXECUTE;
+                    newPipeline[Stage::EXECUTE] = new InstructionNode(*node);
+                    break;
+                case Stage::EXECUTE:
+                    node->stage = Stage::MEMORY;
+                    newPipeline[Stage::MEMORY] = new InstructionNode(*node);
+                    break;
+                default:
+                    newPipeline[node->stage] = new InstructionNode(*node);
+                    break;
             }
+
+            stats.stallBubbles++;
             instructionProcessed = true;
+            if (stage == Stage::DECODE) stalled = true;
             continue;
         }
 
-        switch (node.stage) {
+        switch (node->stage) {
             case Stage::FETCH:
-            {
-                instructionCount++;
-                
-                if (isSpecificInstructionFollowed && instructionCount == specificFollowedInstruction) {
-                    isFollowedInstructionActive = true;
-                    followedInstructionPC = node.PC;
-                    followedInstructionStage = Stage::FETCH;
-                    followedInstructionRegisters = InstructionRegisters();
-                    
-                    if (isPrintingPipelineRegisters) {
-                        std::cout << "TRACKING: Started tracking instruction #" << specificFollowedInstruction 
-                              << " at PC 0x" << std::hex << node.PC << std::dec << std::endl;
+                {
+                    bool executeLoadUseStall = (isPipeline && pipeline[Stage::EXECUTE] != nullptr && checkLoadUseHazard(*pipeline[Stage::EXECUTE]));
+                    if (executeLoadUseStall || (stalled && !isDataForwarding)) {
+                        newPipeline[Stage::FETCH] = new InstructionNode(*node);
+                        stats.stallBubbles++;
+                        instructionProcessed = true;
+                        continue;
                     }
-                }
-                
-                fetchInstruction(&node, PC, running, textMap);
-                if (running) {
-                    node.stage = Stage::DECODE;
-                    tempPipeline.push(node);
-                    instructionProcessed = true;
-                    activeStages[Stage::FETCH] = true;
-
-                    if (isFollowedInstructionActive && followedInstructionPC == node.PC) {
-                        followedInstructionStage = Stage::DECODE;
+                    instructionCount++;
+                    fetchInstruction(node, PC, running, textMap);
+                    if (running && node->instruction != 0) {
+                        if (isPipeline && node->instructionType == InstructionType::SB && isBranchPrediction) {
+                            node->branchPredicted = branchPredictor.predict(node->PC);
+                            std::cout << GREEN << "Branch Prediction for PC=" + std::to_string(node->PC) + ": Predicted " + (node->branchPredicted ? "Taken" : "Not Taken") + ", PHT=" + std::to_string(branchPredictor.getPHT(node->PC)) + ", BTB Target=" + std::to_string(branchPredictor.getTarget(node->PC)) << RESET << std::endl;
+                            if (node->branchPredicted) {
+                                uint32_t target = branchPredictor.getTarget(node->PC);
+                                if (target != 0) {
+                                    PC = target;
+                                }
+                            }
+                        }
+                        node->stage = Stage::DECODE;
+                        newPipeline[Stage::DECODE] = new InstructionNode(*node);
+                        instructionProcessed = true;
                     }
                 }
                 break;
-            }
-
+                
             case Stage::DECODE:
-            {
-                decodeInstruction(&node, instructionRegisters, registers);
-                if (isFollowedInstructionActive && followedInstructionPC == node.PC) {
-                    followedInstructionRegisters.RA = instructionRegisters.RA;
-                    followedInstructionRegisters.RB = instructionRegisters.RB;
-                    followedInstructionRegisters.RM = instructionRegisters.RM;
-                }
-                
-                uint32_t opcode = node.opcode & 0x7F;
-                if (opcode == 0x03 || opcode == 0x23) {
-                    stats.dataTransferInstructions++;
-                } else if (opcode == 0x63 || opcode == 0x67 || opcode == 0x6F) {
-                    stats.controlInstructions++;
-                } else {
-                    stats.aluInstructions++;
-                }
-
-                bool hazardDetected = false;
-                
-                static int stallCounter = 0;
-                if (node.PC == 0x04 && !isDataForwarding && stallCounter < 3) {
-                    std::cout << "Forcing stall for demonstration (stall " << (stallCounter+1) << " of 3)" << (isDataForwarding ? " - Would be avoided with data forwarding" : "") << std::endl;
-                    hazardDetected = true;
-                    stats.dataHazards++;
-                    stats.dataHazardStalls++;
-                    stallCounter++;
-                } else if (node.PC == 0x04 && isDataForwarding) {
-                    std::cout << "Data hazard avoided using forwarding!" << std::endl;
-                }
-                
-                if (hazardDetected) {
-                    node.stalled = true; 
-                    hasStall = true;
-                    stats.stallBubbles++;
-                    instructionProcessed = true;
-                    tempPipeline.push(node);
-                } else {
-                    node.stage = Stage::EXECUTE;
-                    tempPipeline.push(node);
-                    activeStages[Stage::DECODE] = true;
-                    instructionProcessed = true;
-                    
-                    if (isFollowedInstructionActive && followedInstructionPC == node.PC) {
-                        followedInstructionStage = Stage::EXECUTE;
+                {
+                    bool executeLoadUseStall = (isPipeline && pipeline[Stage::EXECUTE] != nullptr && checkLoadUseHazard(*pipeline[Stage::EXECUTE]));
+                    if (executeLoadUseStall) {
+                        newPipeline[Stage::DECODE] = new InstructionNode(*node);
+                        stats.stallBubbles++;
+                        instructionProcessed = true;
+                        continue;
                     }
+                    decodeInstruction(node, instructionRegisters, registers);
+
+                    if (isFollowing && node->PC == followedInstruction) {
+                        followedInstructionRegisters.RA = instructionRegisters.RA;
+                        followedInstructionRegisters.RB = instructionRegisters.RB;
+                    }
+
+                    updateDependencies(*node, Stage::DECODE);
+
+                    if (isPipeline && checkDependencies(*node)) {
+                        node->stalled = true;
+                        stats.dataHazards++;
+                        newPipeline[Stage::DECODE] = new InstructionNode(*node);
+                        instructionProcessed = true;
+                        continue;
+                    }
+
+                    node->stage = Stage::EXECUTE;
+                    newPipeline[Stage::EXECUTE] = new InstructionNode(*node);
+                    instructionProcessed = true;
                 }
                 break;
-            }
-
+                
             case Stage::EXECUTE:
-            {
-                uint32_t opcode = node.opcode & 0x7F;
-                bool isBranch = (opcode == 0x63);
-                bool isJump = (opcode == 0x6F || opcode == 0x67);
-                
-                if ((isBranch || isJump) && !isBranchPredicting) {
-                    stats.controlHazards++;
-                    stats.controlHazardStalls += 2;
-                    stats.stallBubbles += 2;
-                    hasStall = true;
-                    
-                    if (isPrintingPipelineRegisters) {
-                        std::cout << "STALL: Control hazard detected at PC 0x" 
-                              << std::hex << node.PC << std::dec 
-                              << " (" << textMap[node.PC].second << ")" << std::endl;
+                {
+                    if (isPipeline) {
+                        if (checkLoadUseHazard(*node)) {
+                            node->stalled = true;
+                            stats.dataHazards++;
+                            newPipeline[Stage::EXECUTE] = new InstructionNode(*node);
+                            instructionProcessed = true;
+                            stalled = true;
+                            continue;
+                        }
+                        applyDataForwarding(*node);
                     }
+                    
+                    uint32_t oldPC = PC;
+                    executeInstruction(node, instructionRegisters, registers, PC);
+
+                    if (isFollowing && node->PC == followedInstruction) {
+                        followedInstructionRegisters.RY = instructionRegisters.RY;
+                    }
+
+                    updateDependencies(*node, Stage::EXECUTE);
+
+                    bool taken = (oldPC != PC);
+                    if (isPipeline && node->instructionType == InstructionType::SB && isBranchPrediction) {
+                        uint32_t target = PC;
+                        branchPredictor.update(node->PC, taken, target);
+                        std::cout << GREEN << "Branch Update for PC=" + std::to_string(node->PC) + ": Taken=" + (taken ? "Yes" : "No") + ", New PHT=" + std::to_string(branchPredictor.getPHT(node->PC)) + ", BTB Updated to " + std::to_string(target) << RESET << std::endl;
+                        if (node->branchPredicted != taken) {
+                            stats.branchMispredictions++;
+                            flushPipeline("Branch misprediction");
+                            stats.controlHazards++;
+                            stats.controlHazardStalls += 2;
+                            newPipeline[Stage::FETCH] = nullptr;
+                            newPipeline[Stage::DECODE] = nullptr;
+                        }
+                    } else if (isPipeline && taken) {
+                        flushPipeline("Control hazard - branch/jump taken");
+                        stats.controlHazards++;
+                        stats.controlHazardStalls += 2;
+                        newPipeline[Stage::FETCH] = nullptr;
+                        newPipeline[Stage::DECODE] = nullptr;
+                    }
+                    
+                    node->stage = Stage::MEMORY;
+                    newPipeline[Stage::MEMORY] = new InstructionNode(*node);
+                    instructionProcessed = true;
                 }
+                break;
                 
-                uint32_t oldPC = PC;
-                
-                executeInstruction(&node, instructionRegisters, registers, PC);
-                if (isFollowedInstructionActive && followedInstructionPC == node.PC) {
-                    followedInstructionRegisters.RY = instructionRegisters.RY;
+            case Stage::MEMORY:
+                {
+                    memoryAccess(node, instructionRegisters, registers, dataMap);
+
+                    if (isFollowing && node->PC == followedInstruction) {
+                        followedInstructionRegisters.RZ = instructionRegisters.RZ;
+                    }
+
+                    updateDependencies(*node, Stage::MEMORY);
+                    
+                    node->stage = Stage::WRITEBACK;
+                    newPipeline[Stage::WRITEBACK] = new InstructionNode(*node);
+                    instructionProcessed = true;
                 }
+                break;
                 
-                if (isDataForwarding) {
-                    if (node.rd != 0) {
-                        instructionRegisters.RZ = node.rd;
-                        if (isFollowedInstructionActive && followedInstructionPC == node.PC) {
-                            followedInstructionRegisters.RZ = node.rd;
+            case Stage::WRITEBACK:
+                {
+                    writeback(node, instructionRegisters, registers);
+                    updateDependencies(*node, Stage::WRITEBACK);
+
+                    instructionProcessed = true;
+                    uint32_t opcode = node->opcode & 0x7F;
+                    stats.instructionsExecuted++;
+                    if (opcode == 0x03) stats.dataTransferInstructions++;
+                    else if (opcode == 0x23) stats.dataTransferInstructions++;
+                    else if (opcode == 0x63) stats.controlInstructions++;
+                    else if (opcode == 0x67 || opcode == 0x6F) stats.controlInstructions++;
+                    else stats.aluInstructions++;
+
+                    if (!isPipeline && running && textMap.find(PC) != textMap.end()) {
+                        bool pipelineEmpty = true;
+                        for (const auto& [_, node] : newPipeline) {
+                            if (node != nullptr) {
+                                pipelineEmpty = false;
+                                break;
+                            }
+                        }
+                        
+                        if (pipelineEmpty) {
+                            newPipeline[Stage::FETCH] = new InstructionNode(PC);
                         }
                     }
                 }
-
-                if ((isBranch || isJump) && isBranchPredicting) {
-                    bool branchTaken = (oldPC != PC);
-                    bool predicted = branchPredictor.predict(node.PC);
-                    branchPredictor.update(node.PC, branchTaken, branchTaken ? PC : 0);
-                    
-                    bool misprediction = (predicted != branchTaken);
-                    if (misprediction) {
-                        stats.branchMispredictions++;
-                        flushPipeline("Branch misprediction at PC 0x" + 
-                                    std::to_string(node.PC) + 
-                                    (branchTaken ? " (taken, predicted not taken)" : " (not taken, predicted taken)"));
-                        hasStall = true;
-                    }
-                }
-                
-                node.stage = Stage::MEMORY;
-                tempPipeline.push(node);
-                instructionProcessed = true;
-                activeStages[Stage::EXECUTE] = true;
-                if (isFollowedInstructionActive && followedInstructionPC == node.PC) {
-                    followedInstructionStage = Stage::MEMORY;
-                }
                 break;
-            }
-
-            case Stage::MEMORY:
-            {
-                memoryAccess(&node, instructionRegisters, registers, dataMap);
-                
-                node.stage = Stage::WRITEBACK;
-                tempPipeline.push(node);
-                instructionProcessed = true;
-                activeStages[Stage::MEMORY] = true;
-                if (isFollowedInstructionActive && followedInstructionPC == node.PC) {
-                    followedInstructionStage = Stage::WRITEBACK;
-                }
-                break;
-            }
-
-            case Stage::WRITEBACK:
-            {
-                writeback(&node, instructionRegisters, registers);
-                if (isFollowedInstructionActive && followedInstructionPC == node.PC) {
-                    followedInstructionRegisters.RZ = instructionRegisters.RZ;
-                    if (isPrintingPipelineRegisters) {
-                        std::cout << "TRACKING: Instruction #" << specificFollowedInstruction 
-                              << " at PC 0x" << std::hex << followedInstructionPC << std::dec 
-                              << " has completed execution" << std::endl;
-                    }
-                    isFollowedInstructionActive = false;
-                }
-                
-                instructionProcessed = true;
-                activeStages[Stage::WRITEBACK] = true;
-                break;
-            }
         }
     }
 
-    pipeline = tempPipeline;
+    bool executeLoadUseStall = (isPipeline && pipeline[Stage::EXECUTE] != nullptr && checkLoadUseHazard(*pipeline[Stage::EXECUTE]));
+    if (isPipeline && newPipeline[Stage::FETCH] == nullptr && textMap.find(PC) != textMap.end() && running) {
+        if (!executeLoadUseStall && (!stalled || isDataForwarding)) {
+            newPipeline[Stage::FETCH] = new InstructionNode(PC);
+        } else {
+            stats.stallBubbles++;
+        }
+    }
 
-    if (running && textMap.find(PC) == textMap.end()) {
+    for (auto& pair : pipeline) {
+        if (pair.second != nullptr) {
+            delete pair.second;
+        }
+    }
+    pipeline = newPipeline;
+
+    bool isEmpty = isPipelineEmpty();
+    if (isEmpty && !textMap.empty() && textMap.find(PC) == textMap.end()) {
         running = false;
     }
 
-    if (instructionProcessed) stats.totalCycles++;
-
-    if (instructionCount > 0) {
-        stats.cyclesPerInstruction = static_cast<double>(stats.totalCycles) / instructionCount;
+    if (instructionProcessed) {
+        stats.totalCycles++;
+        if (instructionCount > 0) {
+            stats.cyclesPerInstruction = static_cast<double>(stats.totalCycles) / instructionCount;
+        }
     }
 }
 
 bool Simulator::step() {
-    if (!running && pipeline.empty()) {
-        logs[400] = "Cannot step - simulator is not running";
+    bool isEmpty = isPipelineEmpty();
+    
+    if (!running && isEmpty) {
+        std::cerr << RED << "Cannot step - simulator is not running" << RESET << std::endl;
         return false;
     }
-
+    
     try {
-        std::cout << "PC: 0x" << std::hex << PC << std::dec 
-                  << ", Pipeline size: " << pipeline.size() 
-                  << ", Stalls: " << stats.stallBubbles 
-                  << ", Hazards: " << stats.dataHazards
-                  << ", Data Forwarding: " << (isDataForwarding ? "ENABLED" : "DISABLED") 
-                  << std::endl;
         advancePipeline();
         stats.instructionsExecuted = instructionCount;
-        if (isBranchPredicting && isPrintingPipelineRegisters) {
-            branchPredictor.printDetails(std::cout);
-        }
-        if (isSpecificInstructionFollowed && isFollowedInstructionActive && isPrintingPipelineRegisters) {
-            std::cout << "\n===== TRACKED INSTRUCTION #" << specificFollowedInstruction
-                      << " (PC: 0x" << std::hex << followedInstructionPC << std::dec << ") =====" << std::endl;
-            std::cout << "Current stage: ";
-            switch (followedInstructionStage) {
-                case Stage::FETCH: std::cout << "FETCH"; break;
-                case Stage::DECODE: std::cout << "DECODE"; break;
-                case Stage::EXECUTE: std::cout << "EXECUTE"; break;
-                case Stage::MEMORY: std::cout << "MEMORY"; break;
-                case Stage::WRITEBACK: std::cout << "WRITEBACK"; break;
-                default: std::cout << "UNKNOWN"; break;
+        isEmpty = isPipelineEmpty();
+        if (!running && isEmpty) {
+            std::cout << GREEN << "Program execution completed" << RESET;
+            if(isPipeline) {
+                std::cout << GREEN << "Program execution completed. Stats: CPI=" + std::to_string(stats.cyclesPerInstruction) +
+                        ", Instructions=" + std::to_string(stats.instructionsExecuted) +
+                        ", Cycles=" + std::to_string(stats.totalCycles) +
+                        ", Stalls=" + std::to_string(stats.stallBubbles) +
+                        ", DataHazards=" + std::to_string(stats.dataHazards) +
+                        ", ControlHazards=" + std::to_string(stats.controlHazards) +
+                        ", Mispredictions=" + std::to_string(stats.branchMispredictions) << RESET;
             }
-            std::cout << std::endl;
-            std::cout << "RA: 0x" << std::hex << followedInstructionRegisters.RA << std::dec << std::endl;
-            std::cout << "RB: 0x" << std::hex << followedInstructionRegisters.RB << std::dec << std::endl;
-            std::cout << "RM: 0x" << std::hex << followedInstructionRegisters.RM << std::dec << std::endl;
-            std::cout << "RY: 0x" << std::hex << followedInstructionRegisters.RY << std::dec << std::endl;
-            std::cout << "RZ: 0x" << std::hex << followedInstructionRegisters.RZ << std::dec << std::endl;
-            std::cout << "====================================" << std::endl;
-        }
-        if (!running && pipeline.empty()) {
+            std::cout << RESET << std::endl;
             return false;
         }
-        
+
+        if (textMap.find(PC) != textMap.end()) {
+            running = true;
+            if (pipeline[Stage::FETCH] == nullptr && running && 
+                (isPipeline || isPipelineEmpty())) {
+                setStageInstruction(Stage::FETCH, new InstructionNode(PC));
+            }
+        }
+
         return true;
     }
-    catch (const std::runtime_error &e)
-    {
-        logs[404] = "Runtime error during step execution: " + std::string(e.what());
+    catch (const std::runtime_error &e) {
+        std::cerr << RED << "Runtime error during step execution: " + std::string(e.what()) << RESET << std::endl;
         running = false;
         return false;
     }
 }
 
 void Simulator::run() {
-    if (!running) {
-        logs[400] = "Cannot run - simulator is not running";
+    bool isEmpty = isPipelineEmpty();
+    
+    if (!running && isEmpty) {
+        std::cerr << RED << "Cannot run - simulator is not running" << RESET << std::endl;
         return;
     }
-
-    logs[200] = "Starting full program execution";
+    
     int stepCount = 0;
-    while (running || !pipeline.empty()) {
+    while (running || !isEmpty) {
         if (!step())
             break;
+            
         stepCount++;
-
         if (stepCount > MAX_STEPS) {
-            logs[400] = "Program execution terminated - exceeded maximum step count (100000)";
+            std::cerr << RED << "Program execution terminated - exceeded maximum step count (" + std::to_string(MAX_STEPS) + ")" << RESET << std::endl;
             break;
         }
+        isEmpty = isPipelineEmpty();
     }
-
-    logs[200] = "Simulation completed. Total clock cycles: " + std::to_string(stats.totalCycles) + ", Total steps executed: " + std::to_string(stepCount);
-}
-
-void Simulator::setIsPipeline() {
-    isPipeline = !isPipeline;
-}
-
-void Simulator::setIsDataForwarding()
-{
-    isDataForwarding = !isDataForwarding;
-    std::cout << "Data forwarding: " << (isDataForwarding ? "Enabled" : "Disabled") << std::endl;
-}
-
-void Simulator::setIsPrintingRegisters()
-{
-    isPrintingRegisters = !isPrintingRegisters;
-    std::cout << "Register printing: " << (isPrintingRegisters ? "Enabled" : "Disabled") << std::endl;
-}
-
-void Simulator::setIsPrintingPipelineRegisters()
-{
-    isPrintingPipelineRegisters = !isPrintingPipelineRegisters;
-    std::cout << "Pipeline register printing: " << (isPrintingPipelineRegisters ? "Enabled" : "Disabled") << std::endl;
-}
-
-void Simulator::setIsSpecificInstructionFollowed(uint32_t followed)
-{
-    isSpecificInstructionFollowed = (followed != UINT32_MAX);
-    specificFollowedInstruction = followed;
-    
-    if (isSpecificInstructionFollowed) {
-        std::cout << "Specific instruction following: Enabled for instruction #" << specificFollowedInstruction << std::endl;
-        followedInstructionPC = 0;
-        followedInstructionStage = Stage::FETCH;
-        isFollowedInstructionActive = false;
-        followedInstructionRegisters = InstructionRegisters();
-        if (instructionCount >= specificFollowedInstruction) {
-            std::cout << "Warning: The specified instruction (#" << specificFollowedInstruction 
-                      << ") has already been processed. Instruction count is currently at: " 
-                      << instructionCount << std::endl;
-        }
-    } else {
-        std::cout << "Specific instruction following: Disabled" << std::endl;
+    std::cout << GREEN << "Program execution completed" << RESET;
+    if(isPipeline) {
+        std::cout << GREEN << "Mispredictions: " + std::to_string(stats.branchMispredictions) + " Stalls: " + std::to_string(stats.stallBubbles) + " Data Hazards: " + std::to_string(stats.dataHazards) + " Control Hazards: " + std::to_string(stats.controlHazards) + " Pipeline Flushes: " + std::to_string(stats.pipelineFlushes) << RESET;
     }
+    std::cout << RESET << std::endl;
 }
 
-void Simulator::setIsBranchPredicting()
-{
-    isBranchPredicting = !isBranchPredicting;
-    std::cout << "Branch prediction: " << (isBranchPredicting ? "Enabled" : "Disabled") << std::endl;
-}
-
-void Simulator::setEnvironment(bool pipelineMode, bool dataForwarding,
-                               bool printingRegisters, bool printingPipelineRegisters,
-                               bool specificInstructionFollowed, bool branchPredicting)
-{
-    bool previousPipelineMode = isPipeline;
-    isPipeline = pipelineMode;
+void Simulator::setEnvironment(bool pipeline, bool dataForwarding, bool branchPrediction, uint32_t instruction) {
+    isPipeline = pipeline;
     isDataForwarding = dataForwarding;
-    isPrintingRegisters = printingRegisters;
-    isPrintingPipelineRegisters = printingPipelineRegisters;
-    isSpecificInstructionFollowed = specificInstructionFollowed;
-    isBranchPredicting = branchPredicting;
+    isBranchPrediction = branchPrediction;
+    followedInstruction = instruction;
+    if(followedInstruction != UINT32_MAX) {
+        isFollowing = true;
+    }
 }
 
-bool Simulator::isRunning() const
-{
+bool Simulator::isRunning() const {
     return running;
 }
 
-uint32_t Simulator::getPC() const
-{
+uint32_t Simulator::getPC() const {
     return PC;
 }
 
-const uint32_t *Simulator::getRegisters() const
-{
+const uint32_t *Simulator::getRegisters() const {
     return registers;
 }
 
-SimulationStats Simulator::getStats() const
-{
-    return stats;
+uint32_t Simulator::getStalls() const {
+    return stats.stallBubbles;
 }
 
-std::map<Stage, bool> Simulator::getActiveStages() const
-{
+std::map<Stage, std::pair<bool, uint32_t>> Simulator::getActiveStages() const {
+    std::map<Stage, std::pair<bool, uint32_t>> activeStages;
+    activeStages[Stage::FETCH] = std::make_pair(false, 0);
+    activeStages[Stage::DECODE] = std::make_pair(false, 0);
+    activeStages[Stage::EXECUTE] = std::make_pair(false, 0);
+    activeStages[Stage::MEMORY] = std::make_pair(false, 0);
+    activeStages[Stage::WRITEBACK] = std::make_pair(false, 0);
+
+    for (const auto& [stage, node] : pipeline) {
+        if (node != nullptr) {
+            activeStages[stage] = std::make_pair(true, node->PC);
+        }
+    }
     return activeStages;
 }
 
-std::unordered_map<uint32_t, uint8_t> Simulator::getDataMap() const
-{
+std::unordered_map<uint32_t, uint8_t> Simulator::getDataMap() const {
     return dataMap;
 }
 
-std::map<uint32_t, std::pair<uint32_t, std::string>> Simulator::getTextMap() const
-{
+std::map<uint32_t, std::pair<uint32_t, std::string>> Simulator::getTextMap() const {
     return textMap;
 }
 
-size_t Simulator::queueSize() const
-{
-    return pipeline.size();
-}
-
-uint32_t Simulator::getCycles() const
-{
+uint32_t Simulator::getCycles() const {
     return stats.totalCycles;
-}
-
-bool Simulator::hasStallCondition() const
-{
-    return hasStall;
-}
-
-void Simulator::writeStatsToFile(const std::string& filename) const
-{
-    try {
-        std::ofstream file(filename);
-        if (!file.is_open()) {
-            std::cerr << "Error: Could not open stats file: " << filename << std::endl;
-            return;
-        }
-
-        file << "================== SIMULATION STATISTICS ==================" << std::endl;
-        file << "Stat1: Total number of cycles: " << stats.totalCycles << std::endl;
-        file << "Stat2: Total instructions executed: " << instructionCount << std::endl;
-
-        double cpi = (instructionCount > 0) ? 
-                    static_cast<double>(stats.totalCycles) / instructionCount : 0.0;
-        file << "Stat3: CPI: " << std::fixed << std::setprecision(2) << cpi << std::endl;
-        
-        file << "Stat4: Number of Data-transfer (load and store) instructions: " 
-             << stats.dataTransferInstructions << std::endl;
-        file << "Stat5: Number of ALU instructions: " << stats.aluInstructions << std::endl;
-        file << "Stat6: Number of Control instructions: " << stats.controlInstructions << std::endl;
-        file << "Stat7: Number of stalls/bubbles in the pipeline: " << stats.stallBubbles << std::endl;
-        file << "Stat8: Number of data hazards: " << stats.dataHazards << std::endl;
-        file << "Stat9: Number of control hazards: " << stats.controlHazards << std::endl;
-        file << "Stat10: Number of branch mispredictions: " << stats.branchMispredictions << std::endl;
-        file << "Stat11: Number of stalls due to data hazards: " << stats.dataHazardStalls << std::endl;
-        file << "Stat12: Number of stalls due to control hazards: " << stats.controlHazardStalls << std::endl;
-        file << "Stat13: Number of pipeline flushes: " << stats.pipelineFlushes << std::endl;
-        file << std::endl;
-        
-        file << "================== CONFIGURATION ==================" << std::endl;
-        file << "Pipeline Mode: " << (isPipeline ? "Enabled" : "Disabled") << std::endl;
-        file << "Data Forwarding: " << (isDataForwarding ? "Enabled" : "Disabled") << std::endl;
-        file << "Branch Prediction: " << (isBranchPredicting ? "Enabled" : "Disabled") << std::endl;
-        file << std::endl;
-
-        if (isBranchPredicting) {
-            file << "================== BRANCH PREDICTION STATISTICS ==================" << std::endl;
-            file << "Total branch predictions: " << branchPredictor.totalPredictions << std::endl;
-            file << "Correct predictions: " << branchPredictor.correctPredictions << std::endl;
-            file << "Incorrect predictions: " << branchPredictor.incorrectPredictions << std::endl;
-            
-            double accuracy = (branchPredictor.totalPredictions > 0) ?
-                (static_cast<double>(branchPredictor.correctPredictions) / branchPredictor.totalPredictions * 100.0) : 0.0;
-            file << "Prediction accuracy: " << accuracy << "%" << std::endl;
-            
-            file << std::endl << "Pattern History Table Entries: " << branchPredictor.PHT_SIZE << std::endl;
-            file << "Branch Target Buffer Entries: " << branchPredictor.BTB_SIZE << std::endl;
-            file << "Global History Register Size: " << branchPredictor.GHR_SIZE << " bits" << std::endl;
-
-            if (isPrintingPipelineRegisters) {
-                branchPredictor.printDetails(file);
-            }
-        }
-        
-        file.flush();
-        if (!file.good()) {
-            std::cerr << "Error: Failed to write to stats file: " << filename << std::endl;
-        }
-        file.close();
-        
-        std::cout << "Statistics successfully written to " << filename << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "Error: Exception while writing stats file: " << e.what() << std::endl;
-    }
 }
 
 void Simulator::flushPipeline(const std::string& reason) {
     if (!isPipeline) return;
     
-    while (!pipeline.empty()) {
-        pipeline.pop();
-    }
-
-    if (isSpecificInstructionFollowed && isFollowedInstructionActive) {
-        isFollowedInstructionActive = false;
-        if (isPrintingPipelineRegisters) {
-            std::cout << "TRACKING: Instruction #" << specificFollowedInstruction 
-                  << " at PC 0x" << std::hex << followedInstructionPC << std::dec 
-                  << " was flushed from the pipeline" << std::endl;
-        }
-    }
-
-    for (auto &stage : activeStages) {
-        stage.second = false;
+    if (pipeline[Stage::FETCH] != nullptr) {
+        delete pipeline[Stage::FETCH];
+        pipeline[Stage::FETCH] = nullptr;
     }
     
-    hasStall = false;
+    if (pipeline[Stage::DECODE] != nullptr) {
+        delete pipeline[Stage::DECODE];
+        pipeline[Stage::DECODE] = nullptr;
+    }
+    
     stats.pipelineFlushes++;
-    
-    if (!reason.empty() && isPrintingPipelineRegisters) {
-        std::cout << "PIPELINE FLUSH: " << reason << std::endl;
-    }
+    std::cout << YELLOW << "Pipeline flushed: " + reason;
 }
+
+InstructionRegisters Simulator::getInstructionRegisters() const {
+    return instructionRegisters;
+}
+
+InstructionRegisters Simulator::getFollowedInstructionRegisters() const {
+    return followedInstructionRegisters;
+}
+
 #endif

@@ -18,18 +18,7 @@ This project consists of a RISC-V assembler and simulator written in C++. The as
 
 ## 🧩 Components
 
-### 1. 🔄 Assembler (src/assembler.cpp)
-The assembler translates RISC-V assembly language into machine code. It operates in two passes:
-
-- **First Pass**: Scans for labels and builds a symbol table
-- **Second Pass**: Generates machine code by translating each instruction
-
-Key features:
-- Support for R-type, I-type, S-type, B-type, U-type, and J-type instructions
-- Error detection and reporting
-- Command-line interface for processing assembly files
-
-### 2. 💻 Simulator (src/simulator.cpp)
+### 1. 💻 Simulator (src/simulator.cpp)
 The simulator executes RISC-V machine code in a virtual environment. It provides:
 
 - Instruction-by-instruction execution
@@ -39,7 +28,7 @@ The simulator executes RISC-V machine code in a virtual environment. It provides
 
 The simulator can be used both as a standalone C++ application and as a WebAssembly module in the web frontend.
 
-### 3. 🌐 NextJS Web Frontend
+### 2. 🌐 NextJS Web Frontend
 The project includes a modern web-based interface built with NextJS that allows users to:
 - Write and edit RISC-V assembly code
 - Assemble the code to machine code
@@ -52,7 +41,7 @@ The frontend uses React for the UI components and WebAssembly to run the C++ sim
 The project uses Emscripten to compile the C++ simulator to WebAssembly, enabling it to run in web browsers:
 
 ```bash
-emcc simulator.cpp -o simulator.js --bind -s MODULARIZE=1 -s EXPORT_NAME="createSimulator" -O2
+emcc -O2 -s WASM=1 -s MODULARIZE=1 -s EXPORT_NAME="createSimulator" -s ALLOW_MEMORY_GROWTH=1 -s NO_EXIT_RUNTIME=1 --bind -I. wasm/wasm.cpp -o frontend/simulator.js
 ```
 
 This command:
@@ -73,34 +62,35 @@ cd RISC-V-Aseembler
 
 ## ⚙️ Running the Components
 
-### 🔄 Assembler
-1. **Navigate to the project directory**:
-    ```bash
-    cd /path/to/RISC-V-Assembler
-    ```
-
-2. **Compile the assembler**:
-    ```bash
-    g++ -o riscv_assembler ./src/assembler.cpp
-    ```
-
-3. **Run the assembler**:
-    ```bash
-    ./riscv_assembler input_file.asm output_file.mc
-    ```
-
-    Replace `input_file.asm` with the path to your RISC-V assembly file and `output_file.mc` with the desired output file name.
-
 ### 💻 Simulator
 1. **Compile the simulator**:
     ```bash
-    g++ -o riscv_simulator ./src/simulator.cpp
+    g++ -o riscv_simulator ./src/main.cpp
     ```
 
 2. **Run the simulator**:
     ```bash
-    ./riscv_simulator
+    ./riscv_simulator [options]
     ```
+
+3. **Command-line options**:
+    ```
+    -p, --pipeline             Print full pipeline state each cycle
+    -d, --data-forwarding      Enable data forwarding
+    -r, --registers            Print register values
+    -l, --pipeline-regs        Print pipeline register values only
+    -b, --branch-predict       Enable branch prediction
+    -a, --auto                 Run simulation automatically (non-interactive)
+    -f, --follow NUM           Track specific instruction by number
+    -i, --input FILE           Specify input assembly file (default: input.asm)
+    -h, --help                 Display the help message
+    ```
+
+4. **Example usage**:
+    ```bash
+    ./riscv_simulator -i program.asm -r -d -a
+    ```
+    This will run the simulator with the program.asm file, enable data forwarding, print register values, and run in automatic mode.
 
 ### 🌐 NextJS Web Frontend
 1. **Compile the simulator to WebAssembly**:

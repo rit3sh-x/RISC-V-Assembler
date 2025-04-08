@@ -59,6 +59,8 @@ inline void Parser::handleSectionDirective(const std::string& directive) {
         inTextSection = true;
         inDataSection = false;
         currentAddress = TEXT_SEGMENT_START;
+    } else {
+        reportError("Unknown section directive: " + directive);
     }
 }
 
@@ -71,13 +73,13 @@ inline bool Parser::parse() {
     parsedInstructions.clear();
     bool firstPassResult = processFirstPass();
     if (!firstPassResult) {
-        logs[404] = "First pass failed with " + std::to_string(errorCount) + " errors";
+        reportError("First pass failed with " + std::to_string(errorCount) + " errors");
         return false;
     }
     
     bool secondPassResult = processSecondPass();
     if (!secondPassResult) {
-        logs[404] = "Second pass failed with " + std::to_string(errorCount) + " errors";
+        reportError("Second pass failed with " + std::to_string(errorCount) + " errors");
         return false;
     }
     return errorCount == 0;
@@ -196,7 +198,7 @@ inline bool Parser::processSecondPass() {
 
 inline void Parser::handleDirective(const std::vector<Token> &line) {
     if (line.empty()) {
-        reportError("Empty directive encountered", 0);
+        reportError("Empty directive encountered");
         return;
     }
 
@@ -209,7 +211,7 @@ inline void Parser::handleDirective(const std::vector<Token> &line) {
     }
 
     if (tokenIndex >= line.size() || line[tokenIndex].type != TokenType::DIRECTIVE) {
-        reportError("Expected directive after label", line[0].lineNumber);
+        reportError("Expected directive after label");
         return;
     }
 
@@ -218,7 +220,7 @@ inline void Parser::handleDirective(const std::vector<Token> &line) {
 
     auto it = directives.find(directive);
     if (it == directives.end()) {
-        reportError("Unsupported data directive '" + directive + "'", line[0].lineNumber);
+        reportError("Unsupported data directive '" + directive + "'");
         return;
     }
 
@@ -229,7 +231,7 @@ inline void Parser::handleDirective(const std::vector<Token> &line) {
 
     if (directive == ".asciz" || directive == ".ascii" || directive == ".asciiz") {
         if (tokenIndex >= line.size() || line[tokenIndex].type != TokenType::STRING) {
-            reportError("Invalid or missing string literal for " + directive + " directive", line[0].lineNumber);
+            reportError("Invalid or missing string literal for " + directive + " directive");
             return;
         }
         entry.stringValue = line[tokenIndex].value;
@@ -241,7 +243,7 @@ inline void Parser::handleDirective(const std::vector<Token> &line) {
     }
     else {
         if (tokenIndex >= line.size()) {
-            reportError("Missing value(s) for " + directive + " directive", line[0].lineNumber);
+            reportError("Missing value(s) for " + directive + " directive");
             return;
         }
 
@@ -254,23 +256,23 @@ inline void Parser::handleDirective(const std::vector<Token> &line) {
                     uint64_t value = static_cast<uint64_t>(signedValue);
                     if (directive == ".byte") {
                         if (signedValue < -128 || signedValue > 127) {
-                            reportError("Value out of range for .byte directive: " + line[tokenIndex].value, line[0].lineNumber);
+                            reportError("Value out of range for .byte directive: " + line[tokenIndex].value);
                             return;
                         }
                     } else if (directive == ".half") {
                         if (signedValue < -32768 || signedValue > 32767) {
-                            reportError("Value out of range for .half directive: " + line[tokenIndex].value, line[0].lineNumber);
+                            reportError("Value out of range for .half directive: " + line[tokenIndex].value);
                             return;
                         }
                     } else if (directive == ".word") {
                         if (signedValue < -2147483648LL || signedValue > 2147483647LL) {
-                            reportError("Value out of range for .word directive: " + line[tokenIndex].value, line[0].lineNumber);
+                            reportError("Value out of range for .word directive: " + line[tokenIndex].value);
                             return;
                         }
                     }
                     entry.numericValues.push_back(value);
                 } catch (const std::exception& e) {
-                    reportError("Invalid numeric value in " + directive + " directive: " + e.what(), line[0].lineNumber);
+                    reportError("Invalid numeric value in " + directive + " directive: " + e.what());
                     return;
                 }
             }
@@ -286,7 +288,7 @@ inline void Parser::handleDirective(const std::vector<Token> &line) {
 
                 if (strValue.length() > maxChars) {
                     reportError("Too many characters in " + directive + " directive; expected " + 
-                               std::to_string(maxChars) + " per entry", line[0].lineNumber);
+                               std::to_string(maxChars) + " per entry");
                     return;
                 }
 
@@ -296,7 +298,7 @@ inline void Parser::handleDirective(const std::vector<Token> &line) {
                 entry.numericValues.push_back(packedValue);
             }
             else {
-                reportError("Invalid value in " + directive + " directive", line[0].lineNumber);
+                reportError("Invalid value in " + directive + " directive");
                 return;
             }
             tokenIndex++;
@@ -311,17 +313,19 @@ inline void Parser::handleDirective(const std::vector<Token> &line) {
 
 inline void Parser::addLabel(const std::string &label) {
     auto [it, inserted] = symbolTable.emplace(label, SymbolEntry{currentAddress, false, {}, "", ""});
-    if (!inserted) reportError("Duplicate label '" + label + "'");
+    if (!inserted) {
+        reportError("Duplicate label '" + label + "'");
+    }
 }
 
 inline bool Parser::handleInstruction(const std::vector<Token>& line) {
     if (line.empty()) {
-        reportError("Empty instruction encountered", 0);
+        reportError("Empty instruction encountered");
         return false;
     }
 
     if (!inTextSection) {
-        reportError("Instruction outside of .text section", line[0].lineNumber);
+        reportError("Instruction outside of .text section");
         return false;
     }
 
@@ -329,7 +333,7 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
     std::vector<std::string> operands;
 
     if (riscv::opcodes.count(opcode) == 0) {
-        reportError("Unknown opcode '" + opcode + "'", line[0].lineNumber);
+        reportError("Unknown opcode '" + opcode + "'");
         return false;
     }
 
@@ -383,7 +387,7 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
     bool foundMemoryFormat = false;
     
     if (line.size() <= 1) {
-        reportError("Missing operands for instruction '" + opcode + "'", line[0].lineNumber);
+        reportError("Missing operands for instruction '" + opcode + "'");
         return false;
     }
     
@@ -391,14 +395,14 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
         const Token& token = line[i];
         
         if (token.value.empty()) {
-            reportError("Empty token value in instruction", line[0].lineNumber);
+            reportError("Empty token value in instruction");
             i++;
             continue;
         }
         
         if (isStore && i == 1) {
             if (!isRegister(token.value)) {
-                reportError("First operand of store instruction must be a register", line[0].lineNumber);
+                reportError("First operand of store instruction must be a register");
                 return false;
             }
             operands.push_back(token.value);
@@ -413,12 +417,12 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
                 try {
                     int32_t regNum = getRegisterNumber(reg);
                     if (regNum < 0) {
-                        reportError("Invalid register in memory operand: " + reg, line[0].lineNumber);
+                        reportError("Invalid register in memory operand: " + reg);
                         return false;
                     }
                     int32_t imm = parseImmediate(offset);
                     if (imm < -2048 || imm > 2047) {
-                        reportError("Memory offset out of range (-2048 to 2047): " + offset, line[0].lineNumber);
+                        reportError("Memory offset out of range (-2048 to 2047): " + offset);
                         return false;
                     }
                     
@@ -427,7 +431,7 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
                     i++;
                     continue;
                 } catch (const std::exception& e) {
-                    reportError("Invalid memory offset: " + offset + " - " + e.what(), line[0].lineNumber);
+                    reportError("Invalid memory offset: " + offset + " - " + e.what());
                     return false;
                 }
             }
@@ -437,7 +441,7 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
             case TokenType::REGISTER: {
                 int32_t regNum = getRegisterNumber(token.value);
                 if (regNum < 0) {
-                    reportError("Invalid register: " + token.value, line[0].lineNumber);
+                    reportError("Invalid register: " + token.value);
                     return false;
                 }
                 operands.push_back(token.value);
@@ -449,31 +453,31 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
                     
                     if (isMemoryOp && !foundMemoryFormat) {
                         if (imm < -2048 || imm > 2047) {
-                            reportError("Memory offset out of range (-2048 to 2047): " + token.value, line[0].lineNumber);
+                            reportError("Memory offset out of range (-2048 to 2047): " + token.value);
                             return false;
                         }
                     }
                     else if (isBranch) {
                         if (imm < -4096 || imm > 4095 || (imm & 1)) {
-                            reportError("Branch offset must be even and in range (-4096 to 4095): " + token.value, line[0].lineNumber);
+                            reportError("Branch offset must be even and in range (-4096 to 4095): " + token.value);
                             return false;
                         }
                     }
                     else if (isUType) {
                         if (imm < 0 || imm > 0xFFFFF) {
-                            reportError("Immediate value out of range for U-type instruction (0 to 0xFFFFF): " + token.value, line[0].lineNumber);
+                            reportError("Immediate value out of range for U-type instruction (0 to 0xFFFFF): " + token.value);
                             return false;
                         }
                     }
                     else if (isUJType) {
                         if (imm < -524288 || imm > 524287 || (imm & 1)) {
-                            reportError("Jump immediate must be even and in range (-524288 to 524287): " + token.value, line[0].lineNumber);
+                            reportError("Jump immediate must be even and in range (-524288 to 524287): " + token.value);
                             return false;
                         }
                     }
                     else if (isImm) {
                         if (imm < -2048 || imm > 2047) {
-                            reportError("Immediate value out of range (-2048 to 2047): " + token.value, line[0].lineNumber);
+                            reportError("Immediate value out of range (-2048 to 2047): " + token.value);
                             return false;
                         }
                     }
@@ -482,7 +486,7 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
                     if (isMemoryOp && !foundMemoryFormat && isRegister(token.value)) {
                         operands.push_back(token.value);
                     } else {
-                        reportError("Invalid immediate value: " + token.value + " - " + e.what(), line[0].lineNumber);
+                        reportError("Invalid immediate value: " + token.value + " - " + e.what());
                         return false;
                     }
                 }
@@ -495,10 +499,10 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
                 if (isBranch || isUJType || opcode == "j") {
                     int32_t offset = static_cast<int32_t>(*labelAddress - currentAddress);
                     if (isBranch && (offset < -4096 || offset > 4095 || (offset & 1))) {
-                        reportError("Branch target out of range or misaligned: " + token.value, line[0].lineNumber);
+                        reportError("Branch target out of range or misaligned: " + token.value);
                         return false;
                     } else if ((isUJType || opcode == "j") && (offset < -1048576 || offset > 1048575 || (offset & 1))) {
-                        reportError("Jump target out of range or misaligned: " + token.value, line[0].lineNumber);
+                        reportError("Jump target out of range or misaligned: " + token.value);
                         return false;
                     }
                     operands.push_back(std::to_string(offset));
@@ -515,10 +519,10 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
                     if (isBranch || isUJType || opcode == "j") {
                         int32_t offset = static_cast<int32_t>(*labelAddress - currentAddress);
                         if (isBranch && (offset < -4096 || offset > 4095 || (offset & 1))) {
-                            reportError("Branch target out of range or misaligned: " + token.value, line[0].lineNumber);
+                            reportError("Branch target out of range or misaligned: " + token.value);
                             return false;
                         } else if ((isUJType || opcode == "j") && (offset < -1048576 || offset > 1048575 || (offset & 1))) {
-                            reportError("Jump target out of range or misaligned: " + token.value, line[0].lineNumber);
+                            reportError("Jump target out of range or misaligned: " + token.value);
                             return false;
                         }
                         operands.push_back(std::to_string(offset));
@@ -528,14 +532,14 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
                 } else if (isRegister(token.value)) {
                     operands.push_back(token.value);
                 } else {
-                    reportError("Invalid operand or undefined label '" + token.value + "' in instruction", line[0].lineNumber);
+                    reportError("Invalid operand or undefined label '" + token.value + "' in instruction");
                     return false;
                 }
                 break;
             }
             default:
                 reportError("Invalid token type '" + getTokenTypeName(token.type) + "' with value '" + 
-                           (token.value.empty() ? "empty" : token.value) + "' in instruction", line[0].lineNumber);
+                           (token.value.empty() ? "empty" : token.value) + "' in instruction");
                 return false;
         }
         i++;
@@ -543,18 +547,18 @@ inline bool Parser::handleInstruction(const std::vector<Token>& line) {
 
     if (isMemoryOp && !foundMemoryFormat && operands.size() == expectedOperands) {
         if (operands.empty() || operands.back().empty()) {
-            reportError("Missing base register in memory operation", line[0].lineNumber);
+            reportError("Missing base register in memory operation");
             return false;
         }
         if (!isRegister(operands.back())) {
-            reportError("Invalid base register in memory operation: " + operands.back(), line[0].lineNumber);
+            reportError("Invalid base register in memory operation: " + operands.back());
             return false;
         }
     }
     
     if (operands.size() != expectedOperands) {
         reportError("Incorrect number of operands for '" + opcode + "' (expected " + std::to_string(expectedOperands) + 
-                   ", got " + std::to_string(operands.size()) + ")", line[0].lineNumber);
+                   ", got " + std::to_string(operands.size()) + ")");
         return false;
     }
     
@@ -584,7 +588,7 @@ inline void Parser::reportError(const std::string &message, int lineNumber) cons
     } else {
         errorMsg = "Parser Error: " + message;
     }
-    logs[404] = errorMsg;
+    throw std::runtime_error(std::string(RED) + errorMsg + RESET);
     ++errorCount;
 }
 

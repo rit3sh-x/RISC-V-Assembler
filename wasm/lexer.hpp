@@ -54,7 +54,6 @@ inline Token Lexer::classifyToken(const std::string& token, int lineNumber) {
     if (isLabel(trimmed) && trimmed.length() > 1) {
         return {TokenType::LABEL, trimmed.substr(0, trimmed.length() - 1), lineNumber};
     }
-    logs[404] = "Unknown token type on line " + std::to_string(lineNumber) + ": " + trimmed;
     return {TokenType::UNKNOWN, trimmed, lineNumber};
 }
 

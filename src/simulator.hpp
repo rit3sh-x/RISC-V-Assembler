@@ -1,8 +1,6 @@
 #ifndef SIMULATOR_HPP
 #define SIMULATOR_HPP
 
-// TODO : uhhhh.... Branch Predictor && Follower
-
 #include <vector>
 #include <string>
 #include <map>
@@ -49,20 +47,15 @@ private:
     void setStageInstruction(Stage stage, InstructionNode* node);
     bool checkLoadUseHazard(const InstructionNode& node) const;
     bool isPipelineEmpty() const;
+    void reset();
 
 public:
     Simulator();
     bool loadProgram(const std::string &input);
     bool step();
     void run();
-    void reset();
     void setEnvironment(bool pipeline, bool dataForwarding, bool branchPrediction, uint32_t instruction);
-    bool isRunning() const;
-    uint32_t getPC() const;
     const uint32_t *getRegisters() const;
-    uint32_t getStalls() const;
-    std::map<Stage, std::pair<bool, uint32_t>> getActiveStages() const;
-    std::unordered_map<uint32_t, uint8_t> getDataMap() const;
     std::map<uint32_t, std::pair<uint32_t, std::string>> getTextMap() const;
     uint32_t getCycles() const;
     InstructionRegisters getInstructionRegisters() const;
@@ -593,42 +586,6 @@ void Simulator::setEnvironment(bool pipeline, bool dataForwarding, bool branchPr
     if(followedInstruction != UINT32_MAX) {
         isFollowing = true;
     }
-}
-
-bool Simulator::isRunning() const {
-    return running;
-}
-
-uint32_t Simulator::getPC() const {
-    return PC;
-}
-
-const uint32_t *Simulator::getRegisters() const {
-    return registers;
-}
-
-uint32_t Simulator::getStalls() const {
-    return stats.stallBubbles;
-}
-
-std::map<Stage, std::pair<bool, uint32_t>> Simulator::getActiveStages() const {
-    std::map<Stage, std::pair<bool, uint32_t>> activeStages;
-    activeStages[Stage::FETCH] = std::make_pair(false, 0);
-    activeStages[Stage::DECODE] = std::make_pair(false, 0);
-    activeStages[Stage::EXECUTE] = std::make_pair(false, 0);
-    activeStages[Stage::MEMORY] = std::make_pair(false, 0);
-    activeStages[Stage::WRITEBACK] = std::make_pair(false, 0);
-
-    for (const auto& [stage, node] : pipeline) {
-        if (node != nullptr) {
-            activeStages[stage] = std::make_pair(true, node->PC);
-        }
-    }
-    return activeStages;
-}
-
-std::unordered_map<uint32_t, uint8_t> Simulator::getDataMap() const {
-    return dataMap;
 }
 
 std::map<uint32_t, std::pair<uint32_t, std::string>> Simulator::getTextMap() const {

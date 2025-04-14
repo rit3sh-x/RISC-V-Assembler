@@ -126,6 +126,10 @@ namespace riscv {
                 mispredictions++;
             }
         }
+
+        bool isInBTB(uint32_t branchPC) const {
+            return BTB.count(branchPC) > 0 && BTB.at(branchPC).valid;
+        }
         
         double getAccuracy() const {
             return totalPredictions > 0 ? static_cast<double>(correctPredictions) / totalPredictions * 100.0 : 0.0;
@@ -169,15 +173,17 @@ namespace riscv {
         InstructionType instructionType;
         Stage stage;
         bool stalled, branchPredicted;
+        std::string instructionName;
     
         InstructionNode(uint32_t pc = 0) 
-            : PC(pc), opcode(0), rs1(0), rs2(0), rd(0), instruction(0), func3(0), func7(0), stage(Stage::FETCH), stalled(false), branchPredicted(false) {}
+            : PC(pc), opcode(0), rs1(0), rs2(0), rd(0), instruction(0), func3(0), func7(0), stage(Stage::FETCH), stalled(false), branchPredicted(false), instructionName("") {}
 
         InstructionNode(const InstructionNode& other)
             : PC(other.PC), opcode(other.opcode), rs1(other.rs1), rs2(other.rs2), rd(other.rd), 
               instruction(other.instruction), func3(other.func3), func7(other.func7),
               instructionType(other.instructionType), stage(other.stage), 
-              stalled(other.stalled), branchPredicted(other.branchPredicted) {}
+              stalled(other.stalled), branchPredicted(other.branchPredicted), 
+              instructionName(other.instructionName) {}
     };
 
     struct InstructionRegisters {

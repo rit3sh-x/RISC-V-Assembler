@@ -141,51 +141,90 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
             throw std::runtime_error(std::string(RED) + "Invalid instruction type in decodeInstruction" + RESET);
     }
 
-    instructionRegisters.RA = (node->rs1 != UINT32_MAX) ? registers[node->rs1] : 0;
+    instructionRegisters.RA = (node->rs1 != 0) ? registers[node->rs1] : 0;
 
     switch (node->instructionType) {
-        case InstructionType::R:
-            instructionRegisters.RB = registers[node->rs2];
+        case InstructionType::R: {
+            auto rTypeEncoding = RTypeInstructions::getEncoding();
+            for (const auto &[name, op] : rTypeEncoding.opcodeMap) {
+                if (op == node->opcode && rTypeEncoding.func3Map.at(name) == node->func3 && rTypeEncoding.func7Map.at(name) == node->func7) {
+                    node->instructionName = name;
+                    instructionRegisters.RB = registers[node->rs2];
+                    break;
+                }
+            }
             break;
-
+        }
         case InstructionType::I: {
-            int32_t imm = (node->instruction >> 20) & 0xFFF;
-            if (imm & 0x800) imm |= 0xFFFFF000;
-            instructionRegisters.RB = imm;
+            auto iTypeEncoding = ITypeInstructions::getEncoding();
+            for (const auto &[name, op] : iTypeEncoding.opcodeMap) {
+                if (op == node->opcode && iTypeEncoding.func3Map.at(name) == node->func3) {
+                    node->instructionName = name;
+                    int32_t imm = (node->instruction >> 20) & 0xFFF;
+                    if (imm & 0x800) imm |= 0xFFFFF000;
+                    instructionRegisters.RB = imm;
+                    break;
+                }
+            }
             break;
         }
-
         case InstructionType::S: {
-            int32_t imm = ((node->instruction >> 25) & 0x7F) << 5 | ((node->instruction >> 7) & 0x1F);
-            if (imm & 0x800) imm |= 0xFFFFF000;
-            instructionRegisters.RB = imm;
-            instructionRegisters.RM = registers[node->rs2];
+            auto sTypeEncoding = STypeInstructions::getEncoding();
+            for (const auto &[name, op] : sTypeEncoding.opcodeMap) {
+                if (op == node->opcode && sTypeEncoding.func3Map.at(name) == node->func3) {
+                    node->instructionName = name;
+                    int32_t imm = ((node->instruction >> 25) & 0x7F) << 5 | ((node->instruction >> 7) & 0x1F);
+                    if (imm & 0x800) imm |= 0xFFFFF000;
+                    instructionRegisters.RB = imm;
+                    instructionRegisters.RM = registers[node->rs2];
+                    break;
+                }
+            }
             break;
         }
-
-        case InstructionType::SB:
-            instructionRegisters.RB = ((node->instruction >> 31) & 0x1) << 12 | 
-                                     ((node->instruction >> 7) & 0x1) << 11 | 
-                                     ((node->instruction >> 25) & 0x3F) << 5 | 
-                                     ((node->instruction >> 8) & 0xF) << 1;
-            if (instructionRegisters.RB & 0x1000) instructionRegisters.RB |= 0xFFFFE000;
-            instructionRegisters.RM = registers[node->rs2];
+        case InstructionType::SB: {
+            auto sbTypeEncoding = SBTypeInstructions::getEncoding();
+            for (const auto &[name, op] : sbTypeEncoding.opcodeMap) {
+                if (op == node->opcode && sbTypeEncoding.func3Map.at(name) == node->func3) {
+                    node->instructionName = name;
+                    instructionRegisters.RB = ((node->instruction >> 31) & 0x1) << 12 | 
+                                             ((node->instruction >> 7) & 0x1) << 11 | 
+                                             ((node->instruction >> 25) & 0x3F) << 5 | 
+                                             ((node->instruction >> 8) & 0xF) << 1;
+                    if (instructionRegisters.RB & 0x1000) instructionRegisters.RB |= 0xFFFFE000;
+                    instructionRegisters.RM = registers[node->rs2];
+                    break;
+                }
+            }
             break;
-
-        case InstructionType::U:
-            instructionRegisters.RB = node->instruction & 0xFFFFF000;
+        }
+        case InstructionType::U: {
+            auto uTypeEncoding = UTypeInstructions::getEncoding();
+            for (const auto &[name, op] : uTypeEncoding.opcodeMap) {
+                if (op == node->opcode) {
+                    node->instructionName = name;
+                    instructionRegisters.RB = node->instruction & 0xFFFFF000;
+                    break;
+                }
+            }
             break;
-
+        }
         case InstructionType::UJ: {
-            int32_t imm = ((node->instruction >> 31) & 0x1) << 20 | 
-                         ((node->instruction >> 12) & 0xFF) << 12 | 
-                         ((node->instruction >> 20) & 0x1) << 11 | 
-                         ((node->instruction >> 21) & 0x3FF) << 1;
-            if (imm & 0x100000) imm |= 0xFFE00000;
-            instructionRegisters.RB = imm;
+            auto ujTypeEncoding = UJTypeInstructions::getEncoding();
+            for (const auto &[name, op] : ujTypeEncoding.opcodeMap) {
+                if (op == node->opcode) {
+                    node->instructionName = name;
+                    int32_t imm = ((node->instruction >> 31) & 0x1) << 20 | 
+                                  ((node->instruction >> 12) & 0xFF) << 12 | 
+                                  ((node->instruction >> 20) & 0x1) << 11 | 
+                                  ((node->instruction >> 21) & 0x3FF) << 1;
+                    if (imm & 0x100000) imm |= 0xFFE00000;
+                    instructionRegisters.RB = imm;
+                    break;
+                }
+            }
             break;
         }
-        
         default:
             throw std::runtime_error(std::string(RED) + "Invalid instruction type in decodeInstruction register setup" + RESET);
     }
@@ -193,113 +232,106 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
 
 inline void executeInstruction(InstructionNode* node, InstructionRegisters& instructionRegisters, uint32_t* registers, uint32_t& PC) {
     uint32_t result = 0;
+    const std::string& name = node->instructionName;
 
-    auto rTypeEncoding = RTypeInstructions::getEncoding();
-    for (const auto &[name, op] : rTypeEncoding.opcodeMap) {
-        if (op == node->opcode && rTypeEncoding.func3Map.at(name) == node->func3 && rTypeEncoding.func7Map.at(name) == node->func7) {
-            if (name == "add") {
-                result = instructionRegisters.RA + instructionRegisters.RB;
-            } else if (name == "sub") {
-                result = instructionRegisters.RA - instructionRegisters.RB;
-            } else if (name == "mul") {
-                result = instructionRegisters.RA * instructionRegisters.RB;
-            } else if (name == "div") {
-                result = (instructionRegisters.RB == 0) ? 0xFFFFFFFF : static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) / static_cast<int32_t>(instructionRegisters.RB));
-            } else if (name == "rem") {
-                result = (instructionRegisters.RB == 0) ? instructionRegisters.RA : static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) % static_cast<int32_t>(instructionRegisters.RB));
-            } else if (name == "and") {
-                result = instructionRegisters.RA & instructionRegisters.RB;
-            } else if (name == "or") {
-                result = instructionRegisters.RA | instructionRegisters.RB;
-            } else if (name == "xor") {
-                result = instructionRegisters.RA ^ instructionRegisters.RB;
-            } else if (name == "sll") {
-                result = instructionRegisters.RA << (instructionRegisters.RB & 0x1F);
-            } else if (name == "srl") {
-                result = instructionRegisters.RA >> (instructionRegisters.RB & 0x1F);
-            } else if (name == "sra") {
-                result = static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) >> (instructionRegisters.RB & 0x1F));
-            } else if (name == "slt") {
-                result = (static_cast<int32_t>(instructionRegisters.RA) < static_cast<int32_t>(instructionRegisters.RB)) ? 1 : 0;
+    if (node->instructionType == InstructionType::R) {
+        if (name == "add") {
+            result = instructionRegisters.RA + instructionRegisters.RB;
+        } else if (name == "sub") {
+            result = instructionRegisters.RA - instructionRegisters.RB;
+        } else if (name == "mul") {
+            result = instructionRegisters.RA * instructionRegisters.RB;
+        } else if (name == "div") {
+            if (instructionRegisters.RB == 0) {
+                std::cerr << RED << "Division by zero at PC 0x" << std::hex << node->PC << RESET << std::endl;
+                exit(1);
+            } else {
+                result = static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) / static_cast<int32_t>(instructionRegisters.RB));
             }
-            instructionRegisters.RY = result;
-            return;
+        } else if (name == "rem") {
+            if (instructionRegisters.RB == 0) {
+                std::cerr << RED << "Remainder by zero at PC 0x" << std::hex << node->PC << RESET << std::endl;
+                exit(1);
+            } else {
+                result = static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) % static_cast<int32_t>(instructionRegisters.RB));
+            }
+        } else if (name == "and") {
+            result = instructionRegisters.RA & instructionRegisters.RB;
+        } else if (name == "or") {
+            result = instructionRegisters.RA | instructionRegisters.RB;
+        } else if (name == "xor") {
+            result = instructionRegisters.RA ^ instructionRegisters.RB;
+        } else if (name == "sll") {
+            result = instructionRegisters.RA << (instructionRegisters.RB & 0x1F);
+        } else if (name == "srl") {
+            result = instructionRegisters.RA >> (instructionRegisters.RB & 0x1F);
+        } else if (name == "sra") {
+            result = static_cast<uint32_t>(static_cast<int32_t>(instructionRegisters.RA) >> (instructionRegisters.RB & 0x1F));
+        } else if (name == "slt") {
+            result = (static_cast<int32_t>(instructionRegisters.RA) < static_cast<int32_t>(instructionRegisters.RB)) ? 1 : 0;
         }
+        instructionRegisters.RY = result;
+        return;
     }
 
-    auto iTypeEncoding = ITypeInstructions::getEncoding();
-    for (const auto &[name, op] : iTypeEncoding.opcodeMap) {
-        if (op == node->opcode && iTypeEncoding.func3Map.at(name) == node->func3) {
-            if (name == "addi") {
-                result = instructionRegisters.RA + instructionRegisters.RB;
-            } else if (name == "andi") {
-                result = instructionRegisters.RA & instructionRegisters.RB;
-            } else if (name == "ori") {
-                result = instructionRegisters.RA | instructionRegisters.RB;
-            } else if (name == "lb" || name == "lh" || name == "lw") {
-                result = instructionRegisters.RA + instructionRegisters.RB;
-                instructionRegisters.RY = result;
-                return;
-            } else if (name == "jalr") {
-                result = node->PC + INSTRUCTION_SIZE;
-                PC = (instructionRegisters.RA + instructionRegisters.RB) & ~1;
-            }
-            instructionRegisters.RY = result;
-            return;
-        }
-    }
-
-    auto sTypeEncoding = STypeInstructions::getEncoding();
-    for (const auto &[name, op] : sTypeEncoding.opcodeMap) {
-        if (op == node->opcode && sTypeEncoding.func3Map.at(name) == node->func3) {
+    if (node->instructionType == InstructionType::I) {
+        if (name == "addi") {
+            result = instructionRegisters.RA + instructionRegisters.RB;
+        } else if (name == "andi") {
+            result = instructionRegisters.RA & instructionRegisters.RB;
+        } else if (name == "ori") {
+            result = instructionRegisters.RA | instructionRegisters.RB;
+        } else if (name == "lb" || name == "lh" || name == "lw") {
             result = instructionRegisters.RA + instructionRegisters.RB;
             instructionRegisters.RY = result;
             return;
+        } else if (name == "jalr") {
+            result = node->PC + INSTRUCTION_SIZE;
+            PC = (instructionRegisters.RA + instructionRegisters.RB) & ~1;
         }
+        instructionRegisters.RY = result;
+        return;
     }
 
-    auto sbTypeEncoding = SBTypeInstructions::getEncoding();
-    for (const auto &[name, op] : sbTypeEncoding.opcodeMap) {
-        if (op == node->opcode && sbTypeEncoding.func3Map.at(name) == node->func3) {
-            bool branchTaken = false;
-            if (name == "beq") {
-                branchTaken = (instructionRegisters.RA == instructionRegisters.RM);
-            } else if (name == "bne") {
-                branchTaken = (instructionRegisters.RA != instructionRegisters.RM);
-            } else if (name == "blt") {
-                branchTaken = (static_cast<int32_t>(instructionRegisters.RA) < static_cast<int32_t>(instructionRegisters.RM));
-            } else if (name == "bge") {
-                branchTaken = (static_cast<int32_t>(instructionRegisters.RA) >= static_cast<int32_t>(instructionRegisters.RM));
-            }
-            PC = branchTaken ? (node->PC + instructionRegisters.RB) : PC;
-            instructionRegisters.RY = branchTaken;
-            return;
-        }
+    if (node->instructionType == InstructionType::S) {
+        result = instructionRegisters.RA + instructionRegisters.RB;
+        instructionRegisters.RY = result;
+        return;
     }
 
-    auto uTypeEncoding = UTypeInstructions::getEncoding();
-    for (const auto &[name, op] : uTypeEncoding.opcodeMap) {
-        if (op == node->opcode) {
-            if (name == "lui") {
-                result = instructionRegisters.RB;
-            } else if (name == "auipc") {
-                result = node->PC + instructionRegisters.RB;
-            }
-            instructionRegisters.RY = result;
-            return;
+    if (node->instructionType == InstructionType::SB) {
+        bool branchTaken = false;
+        if (name == "beq") {
+            branchTaken = (instructionRegisters.RA == instructionRegisters.RM);
+        } else if (name == "bne") {
+            branchTaken = (instructionRegisters.RA != instructionRegisters.RM);
+        } else if (name == "blt") {
+            branchTaken = (static_cast<int32_t>(instructionRegisters.RA) < static_cast<int32_t>(instructionRegisters.RM));
+        } else if (name == "bge") {
+            branchTaken = (static_cast<int32_t>(instructionRegisters.RA) >= static_cast<int32_t>(instructionRegisters.RM));
         }
+        PC = branchTaken ? (node->PC + instructionRegisters.RB) : PC;
+        instructionRegisters.RY = branchTaken;
+        return;
     }
 
-    auto ujTypeEncoding = UJTypeInstructions::getEncoding();
-    for (const auto &[name, op] : ujTypeEncoding.opcodeMap) {
-        if (op == node->opcode) {
-            if (name == "jal") {
-                result = node->PC + INSTRUCTION_SIZE;
-                PC = node->PC + instructionRegisters.RB;
-            }
-            instructionRegisters.RY = result;
-            return;
+    if (node->instructionType == InstructionType::U) {
+        if (name == "lui") {
+            result = instructionRegisters.RB;
+        } else if (name == "auipc") {
+            result = node->PC + instructionRegisters.RB;
         }
+        instructionRegisters.RY = result;
+        return;
+    }
+
+    if (node->instructionType == InstructionType::UJ) {
+        if (name == "jal") {
+            result = node->PC + INSTRUCTION_SIZE;
+            PC = node->PC + instructionRegisters.RB;
+        }
+        instructionRegisters.RY = result;
+        return;
     }
 }
 

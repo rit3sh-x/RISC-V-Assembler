@@ -167,6 +167,22 @@ void Simulator::reset() {
 void Simulator::applyDataForwarding(InstructionNode& node) {
     if (!isPipeline || !isDataForwarding) return;
 
+    if (node.stage == Stage::DECODE) {
+        for (const auto& dep : registerDependencies) {
+            if (dep.stage == Stage::MEMORY) {
+                if (node.rs1 != 0 && node.rs1 == dep.reg) {
+                    instructionRegisters.RA = instructionRegisters.RZ;
+                    std::cout << YELLOW << "Data Forwarding: MEM->DE for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" << RESET << std::endl;
+                }
+                if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg) {
+                    instructionRegisters.RB = instructionRegisters.RZ;
+                    std::cout << YELLOW << "Data Forwarding: MEM->DE for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" << RESET << std::endl;
+                }
+            }
+        }
+        return;
+    }
+
     for (const auto& dep : registerDependencies) {
         if (dep.stage == Stage::MEMORY) {
             if (node.rs1 != 0 && node.rs1 == dep.reg) {
@@ -332,13 +348,18 @@ void Simulator::advancePipeline() {
                     fetchInstruction(node, PC, running, textMap);
                     if (running && node->instruction != 0) {
                         if (isPipeline && node->instructionType == InstructionType::SB && isBranchPrediction) {
-                            node->branchPredicted = branchPredictor.predict(node->PC);
-                            std::cout << GREEN << "Branch Prediction for PC=" + std::to_string(node->PC) + ": Predicted " + (node->branchPredicted ? "Taken" : "Not Taken") + ", PHT=" + std::to_string(branchPredictor.getPHT(node->PC)) + ", BTB Target=" + std::to_string(branchPredictor.getTarget(node->PC)) << RESET << std::endl;
-                            if (node->branchPredicted) {
-                                uint32_t target = branchPredictor.getTarget(node->PC);
-                                if (target != 0) {
-                                    PC = target;
+                            if (branchPredictor.isInBTB(node->PC)) {
+                                node->branchPredicted = branchPredictor.predict(node->PC);
+                                std::cout << GREEN << "Branch Prediction for PC=" + std::to_string(node->PC) + ": Predicted " + (node->branchPredicted ? "Taken" : "Not Taken") + ", PHT=" + std::to_string(branchPredictor.getPHT(node->PC)) + ", BTB Target=" + std::to_string(branchPredictor.getTarget(node->PC)) << RESET << std::endl;
+                                if (node->branchPredicted) {
+                                    uint32_t target = branchPredictor.getTarget(node->PC);
+                                    if (target != 0) {
+                                        PC = target;
+                                    }
                                 }
+                            } else {
+                                node->branchPredicted = false;
+                                std::cout << GREEN << "No Branch Prediction for PC=" + std::to_string(node->PC) + ": First encounter, assuming not taken" << RESET << std::endl;
                             }
                         }
                         node->stage = Stage::DECODE;
@@ -358,7 +379,9 @@ void Simulator::advancePipeline() {
                         continue;
                     }
                     decodeInstruction(node, instructionRegisters, registers);
-
+                    if (isPipeline) {
+                        applyDataForwarding(*node);
+                    }
                     if (isFollowing && node->PC == followedInstruction) {
                         followedInstructionRegisters.RA = instructionRegisters.RA;
                         followedInstructionRegisters.RB = instructionRegisters.RB;
@@ -403,25 +426,33 @@ void Simulator::advancePipeline() {
 
                     updateDependencies(*node, Stage::EXECUTE);
 
-                    bool taken = (oldPC != PC);
-                    if (isPipeline && node->instructionType == InstructionType::SB && isBranchPrediction) {
-                        uint32_t target = PC;
-                        branchPredictor.update(node->PC, taken, target);
-                        std::cout << GREEN << "Branch Update for PC=" + std::to_string(node->PC) + ": Taken=" + (taken ? "Yes" : "No") + ", New PHT=" + std::to_string(branchPredictor.getPHT(node->PC)) + ", BTB Updated to " + std::to_string(target) << RESET << std::endl;
-                        if (node->branchPredicted != taken) {
-                            stats.branchMispredictions++;
-                            flushPipeline("Branch misprediction");
+                    uint32_t opcode = node->opcode & 0x7F;
+                    bool isJump = (opcode == 0x6F) || (opcode == 0x67);
+                    bool isBranch = (opcode == 0x63);
+
+                    if (isPipeline) {
+                        if (isBranch) {
+                            bool taken = (oldPC != PC);
+                            uint32_t target = PC;
+                            branchPredictor.update(node->PC, taken, target);
+                            std::cout << GREEN << "Branch Update for PC=" + std::to_string(node->PC) + ": Taken=" + (taken ? "Yes" : "No") + ", New PHT=" + std::to_string(branchPredictor.getPHT(node->PC)) + ", BTB Updated to " + std::to_string(target) << RESET << std::endl;
+                            
+                            if (node->branchPredicted != taken) {
+                                stats.branchMispredictions++;
+                                flushPipeline("Branch misprediction");
+                                stats.controlHazards++;
+                                stats.controlHazardStalls += 2;
+                                newPipeline[Stage::FETCH] = nullptr;
+                                newPipeline[Stage::DECODE] = nullptr;
+                            }
+                        } 
+                        else if (isJump) {
+                            flushPipeline("Control hazard - jump taken");
                             stats.controlHazards++;
                             stats.controlHazardStalls += 2;
                             newPipeline[Stage::FETCH] = nullptr;
                             newPipeline[Stage::DECODE] = nullptr;
                         }
-                    } else if (isPipeline && taken) {
-                        flushPipeline("Control hazard - branch/jump taken");
-                        stats.controlHazards++;
-                        stats.controlHazardStalls += 2;
-                        newPipeline[Stage::FETCH] = nullptr;
-                        newPipeline[Stage::DECODE] = nullptr;
                     }
                     
                     node->stage = Stage::MEMORY;

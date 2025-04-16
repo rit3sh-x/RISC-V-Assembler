@@ -16,11 +16,21 @@ namespace riscv {
     inline constexpr uint32_t STACK_SEGMENT_START = 0x7FFFFDC;
     inline constexpr uint32_t INSTRUCTION_SIZE = 4;
     inline constexpr uint32_t MEMORY_SIZE = 0x80000000;
-
     inline constexpr int NUM_REGISTERS = 32;
     inline constexpr int MAX_STEPS = 100000;
 
     enum class Stage { FETCH, DECODE, EXECUTE, MEMORY, WRITEBACK };
+
+    inline const std::vector<Stage> reverseStageOrder = { Stage::WRITEBACK, Stage::MEMORY, Stage::EXECUTE, Stage::DECODE, Stage::FETCH };
+
+    inline const std::vector<Stage> forwardStageOrder = { Stage::FETCH, Stage::DECODE, Stage::EXECUTE, Stage::MEMORY, Stage::WRITEBACK };
+
+    struct ForwardingStatus {
+        bool raForwarded;
+        bool rbForwarded;
+
+        ForwardingStatus() : raForwarded(false), rbForwarded(false) {}
+    };
 
     inline std::string stageToString(Stage stage) {
         switch (stage) {
@@ -45,6 +55,29 @@ namespace riscv {
         UNKNOWN,
         ERROR,
         STRING
+    };
+
+    enum class Instructions {
+        ADD, SUB, MUL, DIV, REM, AND, OR, XOR, SLL, SLT, SRA, SRL,
+        ADDI, ANDI, ORI, LB, LH, LW, JALR,
+        SB, SH, SW,
+        BEQ, BNE, BGE, BLT,
+        AUIPC, LUI, JAL,
+        INVALID
+    };
+
+    inline const std::unordered_map<std::string, Instructions> stringToInstruction = {
+        {"add", Instructions::ADD},   {"sub", Instructions::SUB},   {"mul", Instructions::MUL},
+        {"div", Instructions::DIV},   {"rem", Instructions::REM},   {"and", Instructions::AND},
+        {"or", Instructions::OR},     {"xor", Instructions::XOR},   {"sll", Instructions::SLL},
+        {"slt", Instructions::SLT},   {"sra", Instructions::SRA},   {"srl", Instructions::SRL},
+        {"addi", Instructions::ADDI}, {"andi", Instructions::ANDI}, {"ori", Instructions::ORI},
+        {"lb", Instructions::LB},     {"lh", Instructions::LH},     {"lw", Instructions::LW},
+        {"jalr", Instructions::JALR},
+        {"sb", Instructions::SB},     {"sh", Instructions::SH},     {"sw", Instructions::SW},
+        {"beq", Instructions::BEQ},   {"bne", Instructions::BNE},   {"bge", Instructions::BGE},
+        {"blt", Instructions::BLT},
+        {"auipc", Instructions::AUIPC}, {"lui", Instructions::LUI}, {"jal", Instructions::JAL}
     };
 
     inline const std::unordered_set<std::string> opcodes = {
@@ -89,10 +122,9 @@ namespace riscv {
         std::unordered_map<uint32_t, BTBEntry> BTB;
         
         uint32_t totalPredictions;
-        uint32_t correctPredictions;
         uint32_t mispredictions;
         
-        BranchPredictor() : totalPredictions(0), correctPredictions(0), mispredictions(0) {}
+        BranchPredictor() : totalPredictions(0), mispredictions(0) {}
         
         bool predict(uint32_t branchPC) {
             return PHT.count(branchPC) > 0 ? PHT[branchPC] : false;
@@ -113,9 +145,7 @@ namespace riscv {
             if (taken) {
                 BTB[branchPC] = BTBEntry(targetAddress);
             }
-            if (predicted == taken) {
-                correctPredictions++;
-            } else {
+            if (predicted != taken) {
                 mispredictions++;
             }
         }
@@ -125,14 +155,13 @@ namespace riscv {
         }
         
         double getAccuracy() const {
-            return totalPredictions > 0 ? static_cast<double>(correctPredictions) / totalPredictions * 100.0 : 0.0;
+            return totalPredictions > 0 ? static_cast<double>(totalPredictions - mispredictions) / totalPredictions * 100.0 : 0.0;
         }
         
         void reset() {
             PHT.clear();
             BTB.clear();
             totalPredictions = 0;
-            correctPredictions = 0;
             mispredictions = 0;
         }
     };
@@ -166,10 +195,10 @@ namespace riscv {
         InstructionType instructionType;
         Stage stage;
         bool stalled, branchPredicted;
-        std::string instructionName;
+        Instructions instructionName;
     
         InstructionNode(uint32_t pc = 0) 
-            : PC(pc), opcode(0), rs1(0), rs2(0), rd(0), instruction(0), func3(0), func7(0), stage(Stage::FETCH), stalled(false), branchPredicted(false), instructionName("") {}
+            : PC(pc), opcode(0), rs1(0), rs2(0), rd(0), instruction(0), func3(0), func7(0), stage(Stage::FETCH), stalled(false), branchPredicted(false), instructionName(Instructions::INVALID) {}
 
         InstructionNode(const InstructionNode& other)
             : PC(other.PC), opcode(other.opcode), rs1(other.rs1), rs2(other.rs2), rd(other.rd), 
@@ -202,7 +231,6 @@ namespace riscv {
         uint32_t stallBubbles;
         uint32_t dataHazards;
         uint32_t controlHazards;
-        uint32_t branchMispredictions;
         uint32_t dataHazardStalls;
         uint32_t controlHazardStalls;
         uint32_t pipelineFlushes;
@@ -213,7 +241,7 @@ namespace riscv {
         SimulationStats()
             : cyclesPerInstruction(0.0), totalCycles(0), instructionsExecuted(0),
               dataTransferInstructions(0), aluInstructions(0), controlInstructions(0),
-              stallBubbles(0), dataHazards(0), controlHazards(0), branchMispredictions(0),
+              stallBubbles(0), dataHazards(0), controlHazards(0),
               dataHazardStalls(0), controlHazardStalls(0), pipelineFlushes(0),
               enablePipeline(false), enableDataForwarding(false) {}
     };

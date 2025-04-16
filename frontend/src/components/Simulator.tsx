@@ -389,9 +389,13 @@ export default function Simulator({
     updateSimulatorState();
   }, [simulatorInstance, updateSimulatorState]);
 
-  useEffect(() => {
-    console.log(activeStates)
-  },[activeStates])
+  // useEffect(() => {
+  //   console.log(activeStates)
+  // },[activeStates])
+
+  useEffect(()=>{
+    console.log(running)
+  },[running])
 
   const handleAssemble = useCallback(() => {
     simulatorInstance.loadProgram(text);

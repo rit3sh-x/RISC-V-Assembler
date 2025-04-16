@@ -175,13 +175,21 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::vector<Reg
                 if (node.rs1 != 0 && node.rs1 == dep.reg) {
                     instructionRegisters.RA = interStageRegisters.RY;
                     forwardingStatus.raForwarded = true;
-                    logs[300] = "Data Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                    if(logs.find(300) != logs.end()) {
+                        logs[300] += "\nData Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                    } else{
+                        logs[300] = "Data Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                    }
                 }
                 if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S ||
                      node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg) {
                     instructionRegisters.RB = interStageRegisters.RY;
                     forwardingStatus.rbForwarded = true;
-                    logs[300] = "Data Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                    if(logs.find(300) != logs.end()) {
+                        logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                    } else{
+                        logs[300] = "Data Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                    }
                 }
             }
         }
@@ -195,14 +203,22 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::vector<Reg
             if (node.rs1 != 0 && node.rs1 == dep.reg && !forwardingStatus.raForwarded) {
                 instructionRegisters.RA = interStageRegisters.RZ;
                 forwardingStatus.raForwarded = true;
-                logs[300] = "Data Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                if(logs.find(300) != logs.end()) {
+                    logs[300] += "\nData Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                } else{
+                    logs[300] = "Data Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                }
             }
             if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S ||
                  node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg &&
                  !forwardingStatus.rbForwarded) {
                 instructionRegisters.RB = interStageRegisters.RZ;
                 forwardingStatus.rbForwarded = true;
-                logs[300] = "Data Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                if(logs.find(300) != logs.end()) {
+                    logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                } else{
+                    logs[300] = "Data Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                }
             }
         }
     }

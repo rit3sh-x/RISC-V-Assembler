@@ -232,10 +232,25 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
             logs[404] = "Invalid instruction type in decodeInstruction register setup";
             throw std::runtime_error(logs[404]);
     }
+
+    switch (node->instructionName) {
+        case Instructions::JAL:
+        case Instructions::JALR:
+            break;
+        case Instructions::BNE:
+        case Instructions::BEQ:
+        case Instructions::BLT:
+        case Instructions::BGE:
+            node->isBranch = true;
+            break;
+        default:
+            break;
+    }
 }
 
-inline void executeInstruction(InstructionNode* node, InstructionRegisters& instructionRegisters, uint32_t* registers, uint32_t& PC) {
+inline void executeInstruction(InstructionNode* node, InstructionRegisters& instructionRegisters, uint32_t* registers, uint32_t& PC, bool& taken) {
     uint32_t result = 0;
+    taken = false;
     std::stringstream ss;
     Instructions instr = node->instructionName;
 
@@ -320,6 +335,7 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
             result = node->PC + INSTRUCTION_SIZE;
             PC = (instructionRegisters.RA + instructionRegisters.RB) & ~1;
             instructionRegisters.RY = result;
+            taken = true;
             break;
         case Instructions::SB:
         case Instructions::SH:
@@ -331,6 +347,7 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
             {
                 bool branchTaken = (instructionRegisters.RA == instructionRegisters.RM);
                 PC = branchTaken ? (node->PC + instructionRegisters.RB) : PC;
+                taken = branchTaken;
                 instructionRegisters.RY = branchTaken;
             }
             break;
@@ -338,6 +355,7 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
             {
                 bool branchTaken = (instructionRegisters.RA != instructionRegisters.RM);
                 PC = branchTaken ? (node->PC + instructionRegisters.RB) : PC;
+                taken = branchTaken;
                 instructionRegisters.RY = branchTaken;
             }
             break;
@@ -345,6 +363,7 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
             {
                 bool branchTaken = (static_cast<int32_t>(instructionRegisters.RA) < static_cast<int32_t>(instructionRegisters.RM));
                 PC = branchTaken ? (node->PC + instructionRegisters.RB) : PC;
+                taken = branchTaken;
                 instructionRegisters.RY = branchTaken;
             }
             break;
@@ -352,6 +371,7 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
             {
                 bool branchTaken = (static_cast<int32_t>(instructionRegisters.RA) >= static_cast<int32_t>(instructionRegisters.RM));
                 PC = branchTaken ? (node->PC + instructionRegisters.RB) : PC;
+                taken = branchTaken;
                 instructionRegisters.RY = branchTaken;
             }
             break;
@@ -366,6 +386,7 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
         case Instructions::JAL:
             result = node->PC + INSTRUCTION_SIZE;
             PC = node->PC + instructionRegisters.RB;
+            taken = true;
             instructionRegisters.RY = result;
             break;
         default:

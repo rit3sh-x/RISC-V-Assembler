@@ -15,7 +15,15 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         {children}
-        <Toaster position="bottom-right" richColors closeButton toastOptions={{ style: { zIndex: 9999 } }} />
+        <Toaster 
+          position="bottom-right" 
+          richColors 
+          pauseWhenPageIsHidden 
+          closeButton 
+          toastOptions={{ style: { zIndex: 9999 } }}
+          expand={true}
+          visibleToasts={5}
+        />
       </body>
     </html>
   );

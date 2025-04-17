@@ -431,18 +431,14 @@ void Simulator::advancePipeline() {
                 interStageRegisters.RB = instructionRegisters.RB;
                 decodeInstruction(node, instructionRegisters, registers);
 
-                uint32_t opcode = node->instruction & 0x7F;
+                uint32_t opcode = node->opcode & 0x7F;
                 if (node->instructionType == InstructionType::I && opcode == 0x03) {
                     stats.dataTransferInstructions++;
                 } else if (node->instructionType == InstructionType::S) {
                     stats.dataTransferInstructions++;
-                } else if (node->instructionType == InstructionType::R || 
-                           (node->instructionType == InstructionType::I && opcode == 0x13) ||
-                           node->instructionType == InstructionType::U) {
+                } else if (node->instructionType == InstructionType::R || (node->instructionType == InstructionType::I && opcode == 0x13) || node->instructionType == InstructionType::U) {
                     stats.aluInstructions++;
-                } else if (node->instructionType == InstructionType::SB || 
-                           node->instructionType == InstructionType::UJ || 
-                           (node->instructionType == InstructionType::I && opcode == 0x67)) {
+                } else if (node->instructionType == InstructionType::SB || node->instructionType == InstructionType::UJ || (node->instructionType == InstructionType::I && opcode == 0x67)) {
                     stats.controlInstructions++;
                 }
 
@@ -544,18 +540,14 @@ void Simulator::advancePipeline() {
                         continue;
                     }
 
-                    uint32_t opcode = node->instruction & 0x7F;
+                    uint32_t opcode = node->opcode & 0x7F;
                     if (node->instructionType == InstructionType::I && opcode == 0x03) {
                         stats.dataTransferInstructions++;
                     } else if (node->instructionType == InstructionType::S) {
                         stats.dataTransferInstructions++;
-                    } else if (node->instructionType == InstructionType::R || 
-                               (node->instructionType == InstructionType::I && opcode == 0x13) ||
-                               node->instructionType == InstructionType::U) {
+                    } else if (node->instructionType == InstructionType::R || (node->instructionType == InstructionType::I && opcode == 0x13) || node->instructionType == InstructionType::U) {
                         stats.aluInstructions++;
-                    } else if (node->instructionType == InstructionType::SB || 
-                               node->instructionType == InstructionType::UJ || 
-                               (node->instructionType == InstructionType::I && opcode == 0x67)) {
+                    } else if (node->instructionType == InstructionType::SB || node->instructionType == InstructionType::UJ || (node->instructionType == InstructionType::I && opcode == 0x67)) {
                         stats.controlInstructions++;
                     }
                     
@@ -594,10 +586,9 @@ void Simulator::advancePipeline() {
                     executeInstruction(node, instructionRegisters, registers, PC, taken);
                     interStageRegisters.RY = instructionRegisters.RY;
                     updateDependencies(*node, Stage::EXECUTE);
-                
+                    
                     if (isPipeline && (node->isBranch || node->isJump)) {
                         bool predictedTaken = branchPredictor.getPHT(node->PC);
-
                         if(node->instructionName == Instructions::JALR) {
                             branchPredictor.update(node->PC, taken, (instructionRegisters.RA + instructionRegisters.RB) & ~1);
                         } else {

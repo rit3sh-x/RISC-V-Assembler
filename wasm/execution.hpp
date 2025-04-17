@@ -243,6 +243,7 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
     switch (node->instructionName) {
         case Instructions::JAL:
         case Instructions::JALR:
+            node->isJump = true;
             break;
         case Instructions::BNE:
         case Instructions::BEQ:

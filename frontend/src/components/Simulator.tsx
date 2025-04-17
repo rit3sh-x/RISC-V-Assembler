@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback, useMemo, memo } from "react"
+import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { RefreshCw, Play, StepForward, ChevronUp, ChevronDown, Hash, SquareCode } from "lucide-react"
@@ -13,10 +13,11 @@ import {
   DialogTitle
 } from "@/components/ui/dialog"
 import type { SimulationControls } from "@/components/Landing";
+import { toast } from "sonner";
 
-const ITEMS_PER_PAGE = 10
+const ITEMS_PER_PAGE = 10;
 
-enum Stage {
+export enum Stage {
   FETCH = 0,
   DECODE = 1,
   EXECUTE = 2,
@@ -24,7 +25,7 @@ enum Stage {
   WRITEBACK = 4
 }
 
-class InstructionRegisters {
+export class InstructionRegisters {
   RA: number;
   RB: number;
   RM: number;
@@ -38,6 +39,13 @@ class InstructionRegisters {
     this.RY = RY;
     this.RZ = RZ;
   }
+}
+
+export interface UIResponse {
+  isFlushed: boolean;
+  isStalled: boolean;
+  isDataForwarded: boolean;
+  isProgramTerminated: boolean;
 }
 
 interface SimulatorProps {
@@ -266,7 +274,6 @@ export default function Simulator({
   const [isHex, setIsHex] = useState<boolean>(true);
   const [instruction, setInstruction] = useState<number>(0);
   const [stalls, setStalls] = useState<number>(0);
-
   const [memoryStartIndex, setMemoryStartIndex] = useState<number>(0);
   const [memoryEntries, setMemoryEntries] = useState<MemoryCell[]>([]);
   const [displayFormat, setDisplayFormat] = useState<"hex" | "decimal">("hex");
@@ -275,6 +282,12 @@ export default function Simulator({
   const [dialogMessage, setDialogMessage] = useState({
     title: "",
     description: ""
+  });
+  const [uiResponse, setUIResponse] = useState<UIResponse>({
+    isFlushed: false,
+    isStalled: false,
+    isDataForwarded: false,
+    isProgramTerminated: false
   });
 
   const showTerminalErrorDialog = useCallback((errorMessage: string) => {
@@ -290,9 +303,12 @@ export default function Simulator({
   
   const updateSimulatorState = useCallback(() => {
     if (!simulatorInstance) return;
+    
+    setUIResponse(simulatorInstance.getUIResponse());
 
     const newTerminal = simulatorInstance.getLogs();
     setTerminal(newTerminal);
+
     setRegisters(simulatorInstance.getRegisters());
     setCycles(simulatorInstance.getCycles());
     setDataMap(simulatorInstance.getDataMap());
@@ -303,9 +319,9 @@ export default function Simulator({
     setPipelineRegisters(simulatorInstance.getInstructionRegisters());
     setInstruction(simulatorInstance.getPC());
     if (newTerminal["404"]) {
-      setTimeout(() => showTerminalErrorDialog(newTerminal["404"]), 0);
+        setTimeout(() => showTerminalErrorDialog(newTerminal["404"]), 0);
     }
-  }, [simulatorInstance, showTerminalErrorDialog]);
+}, [simulatorInstance, showTerminalErrorDialog]);
 
   const memoizedUpdateMemoryEntries = useMemo(() => {
     return () => {
@@ -389,16 +405,37 @@ export default function Simulator({
     updateSimulatorState();
   }, [simulatorInstance, updateSimulatorState]);
 
-  // useEffect(() => {
-  //   console.log(activeStates)
-  // },[activeStates])
+  useEffect(() => {
+    if (uiResponse.isFlushed) {
+        toast.info("Pipeline Flushed", { description: "The pipeline has been flushed." });
+      }
+  }, [uiResponse.isFlushed]);
 
-  useEffect(()=>{
-    console.log(running)
-  },[running])
+  useEffect(() => {
+      if (uiResponse.isStalled) {
+          toast.warning("Pipeline Stalled", { description: "The pipeline has encountered a stall." });
+      }
+  }, [uiResponse.isStalled]);
+
+  useEffect(() => {
+      if (uiResponse.isDataForwarded) {
+          toast.success("Data Forwarded", { description: "Data forwarding has occurred in the pipeline." });
+      }
+  }, [uiResponse.isDataForwarded]);
+
+  useEffect(() => {
+      if (uiResponse.isProgramTerminated) {
+          toast.error("Program Terminated", { description: "The program has terminated execution." });
+      }
+  }, [uiResponse.isProgramTerminated]);
 
   const handleAssemble = useCallback(() => {
-    simulatorInstance.loadProgram(text);
+    const success = simulatorInstance.loadProgram(text);
+    if (success) {
+      toast.success("Program Loaded",{ description: "RISC-V program loaded successfully.", });
+    } else {
+      toast.error("Load Failed",{description: "Failed to load program: " });
+    }
     updateSimulatorState();
   }, [text, simulatorInstance, updateSimulatorState]);
 

@@ -28,6 +28,7 @@ private:
     InstructionRegisters instructionRegisters;
     InstructionRegisters interStageRegisters;
     ForwardingStatus forwardingStatus;
+    UIResponse uiResponse;
 
     bool running;
     bool isPipeline;
@@ -64,12 +65,14 @@ public:
     uint32_t getCycles() const;
     InstructionRegisters getInstructionRegisters() const;
     std::unordered_map<int, std::string> getLogs();
+    UIResponse getUIResponse() const;
 };
 
 Simulator::Simulator() : PC(TEXT_SEGMENT_START),
                          instructionRegisters(InstructionRegisters()),
                          interStageRegisters(InstructionRegisters()),
                          forwardingStatus(ForwardingStatus()),
+                         uiResponse(UIResponse()),
                          running(false),
                          isPipeline(true),
                          isDataForwarding(true),
@@ -158,6 +161,7 @@ void Simulator::reset() {
     running = false;
     stats = SimulationStats();
     forwardingStatus = ForwardingStatus();
+    uiResponse = UIResponse();
     branchPredictor.reset();
     instructionCount = 0;
 }
@@ -175,6 +179,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::vector<Reg
                 if (node.rs1 != 0 && node.rs1 == dep.reg) {
                     instructionRegisters.RA = interStageRegisters.RY;
                     forwardingStatus.raForwarded = true;
+                    uiResponse.isDataForwarded = true;
                     if(logs.find(300) != logs.end()) {
                         logs[300] += "\nData Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
                     } else{
@@ -185,6 +190,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::vector<Reg
                      node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg) {
                     instructionRegisters.RB = interStageRegisters.RY;
                     forwardingStatus.rbForwarded = true;
+                    uiResponse.isDataForwarded = true;
                     if(logs.find(300) != logs.end()) {
                         logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
                     } else{
@@ -203,6 +209,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::vector<Reg
             if (node.rs1 != 0 && node.rs1 == dep.reg && !forwardingStatus.raForwarded) {
                 instructionRegisters.RA = interStageRegisters.RZ;
                 forwardingStatus.raForwarded = true;
+                uiResponse.isDataForwarded = true;
                 if(logs.find(300) != logs.end()) {
                     logs[300] += "\nData Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
                 } else{
@@ -214,6 +221,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::vector<Reg
                  !forwardingStatus.rbForwarded) {
                 instructionRegisters.RB = interStageRegisters.RZ;
                 forwardingStatus.rbForwarded = true;
+                uiResponse.isDataForwarded = true;
                 if(logs.find(300) != logs.end()) {
                     logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
                 } else{
@@ -285,6 +293,8 @@ bool Simulator::checkLoadUseHazard(const InstructionNode& node, const std::vecto
             if ((rs1 != 0 && rs1 == dep.reg) || (hasRS2 && rs2 != 0 && rs2 == dep.reg)) {
                 logs[200] = "Load-Use Hazard: Instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(instruction) + ") depends on load at PC=" + std::to_string(dep.pc) + " (rd=" + std::to_string(dep.reg) + ")";
                 stats.stallBubbles++;
+                stats.dataHazardStalls++;
+                uiResponse.isStalled = true;
                 return true;
             }
         }
@@ -343,6 +353,8 @@ void Simulator::advancePipeline() {
     bool instructionProcessed = false;
     bool loadUseHazard = false;
 
+    uiResponse = UIResponse();
+
     for (auto& pair : pipeline) {
         newPipeline[pair.first] = nullptr;
     }
@@ -372,6 +384,8 @@ void Simulator::advancePipeline() {
                 if (!isDataForwarding && checkDependencies(*node)) {
                     stats.dataHazards++;
                     stats.stallBubbles++;
+                    stats.dataHazardStalls++;
+                    uiResponse.isStalled = true;
                     logs[300] = "Stalling DECODE (resume) at PC=" + std::to_string(node->PC) + " due to RAW hazard";
                 }
             } else if (node->stage == Stage::EXECUTE && (loadUseHazard || (!isDataForwarding && checkDependencies(*node)))) {
@@ -379,6 +393,8 @@ void Simulator::advancePipeline() {
                 if (!isDataForwarding && checkDependencies(*node)) {
                     stats.dataHazards++;
                     stats.stallBubbles++;
+                    stats.dataHazardStalls++;
+                    uiResponse.isStalled = true;
                     logs[300] = "Stalling EXECUTE (resume) at PC=" + std::to_string(node->PC) + " due to RAW hazard";
                 }
             }
@@ -414,6 +430,22 @@ void Simulator::advancePipeline() {
                 interStageRegisters.RA = instructionRegisters.RA;
                 interStageRegisters.RB = instructionRegisters.RB;
                 decodeInstruction(node, instructionRegisters, registers);
+
+                uint32_t opcode = node->instruction & 0x7F;
+                if (node->instructionType == InstructionType::I && opcode == 0x03) {
+                    stats.dataTransferInstructions++;
+                } else if (node->instructionType == InstructionType::S) {
+                    stats.dataTransferInstructions++;
+                } else if (node->instructionType == InstructionType::R || 
+                           (node->instructionType == InstructionType::I && opcode == 0x13) ||
+                           node->instructionType == InstructionType::U) {
+                    stats.aluInstructions++;
+                } else if (node->instructionType == InstructionType::SB || 
+                           node->instructionType == InstructionType::UJ || 
+                           (node->instructionType == InstructionType::I && opcode == 0x67)) {
+                    stats.controlInstructions++;
+                }
+
                 updateDependencies(*node, Stage::DECODE);
                 node->stage = Stage::EXECUTE;
                 newPipeline[Stage::EXECUTE] = new InstructionNode(*node);
@@ -440,6 +472,7 @@ void Simulator::advancePipeline() {
                         newPipeline[Stage::FETCH] = nullptr;
                         newPipeline[Stage::DECODE] = nullptr;
                         stats.controlHazards++;
+                        stats.controlHazardStalls++;
                         logs[300] = (node->isBranch ? "Branch" : "Jump") + std::string(" misprediction at PC=") + std::to_string(node->PC) + " (" + parseInstructions(node->instruction) + "), actual: " + (taken || node->isJump ? "taken to " + std::to_string(PC) : "not taken");
                     }
                 }
@@ -461,6 +494,7 @@ void Simulator::advancePipeline() {
                         node->stalled = true;
                         newPipeline[Stage::FETCH] = new InstructionNode(*node);
                         instructionProcessed = true;
+                        uiResponse.isStalled = true;
                         continue;
                     }
                     instructionCount++;
@@ -488,6 +522,7 @@ void Simulator::advancePipeline() {
                         newPipeline[Stage::DECODE] = new InstructionNode(*node);
                         instructionProcessed = true;
                         stalled = true;
+                        uiResponse.isStalled = true;
                         continue;
                     }
 
@@ -503,8 +538,25 @@ void Simulator::advancePipeline() {
                         stalled = true;
                         stats.dataHazards++;
                         stats.stallBubbles++;
+                        stats.dataHazardStalls++;
+                        uiResponse.isStalled = true;
                         logs[300] = "Stalling DECODE at PC=" + std::to_string(node->PC) + " due to RAW hazard";
                         continue;
+                    }
+
+                    uint32_t opcode = node->instruction & 0x7F;
+                    if (node->instructionType == InstructionType::I && opcode == 0x03) {
+                        stats.dataTransferInstructions++;
+                    } else if (node->instructionType == InstructionType::S) {
+                        stats.dataTransferInstructions++;
+                    } else if (node->instructionType == InstructionType::R || 
+                               (node->instructionType == InstructionType::I && opcode == 0x13) ||
+                               node->instructionType == InstructionType::U) {
+                        stats.aluInstructions++;
+                    } else if (node->instructionType == InstructionType::SB || 
+                               node->instructionType == InstructionType::UJ || 
+                               (node->instructionType == InstructionType::I && opcode == 0x67)) {
+                        stats.controlInstructions++;
                     }
                     
                     updateDependencies(*node, Stage::DECODE);
@@ -521,6 +573,7 @@ void Simulator::advancePipeline() {
                         node->stalled = true;
                         newPipeline[Stage::EXECUTE] = new InstructionNode(*node);
                         instructionProcessed = true;
+                        uiResponse.isStalled = true;
                         continue;
                     }
                     if (!isDataForwarding && checkDependencies(*node)) {
@@ -530,6 +583,8 @@ void Simulator::advancePipeline() {
                         stalled = true;
                         stats.dataHazards++;
                         stats.stallBubbles++;
+                        stats.dataHazardStalls++;
+                        uiResponse.isStalled = true;
                         logs[300] = "Stalling EXECUTE at PC=" + std::to_string(node->PC) + " due to RAW hazard";
                         continue;
                     }
@@ -554,6 +609,7 @@ void Simulator::advancePipeline() {
                             newPipeline[Stage::FETCH] = nullptr;
                             newPipeline[Stage::DECODE] = nullptr;
                             stats.controlHazards++;
+                            stats.controlHazardStalls++;
                             logs[300] = (node->isBranch ? "Branch" : "Jump") + std::string(" misprediction at PC=") + std::to_string(node->PC) + " (" + parseInstructions(node->instruction) + "), actual: " + (taken || node->isJump ? "taken to " + std::to_string(PC) : "not taken");
                         }
                     }
@@ -630,16 +686,24 @@ bool Simulator::step() {
         advancePipeline();
         stats.instructionsExecuted = instructionCount;
         if (!running) {
+            uiResponse.isProgramTerminated = true;
             logs[200] = "Program execution completed";
             if (isPipeline) {
-                logs[200] += " Stats: CPI=" + std::to_string(stats.cyclesPerInstruction) +
+                logs[200] += "\nStats: CPI=" + std::to_string(stats.cyclesPerInstruction) +
                             ", Instructions=" + std::to_string(stats.instructionsExecuted) +
                             ", Cycles=" + std::to_string(stats.totalCycles) +
                             ", Stalls=" + std::to_string(stats.stallBubbles) +
                             ", DataHazards=" + std::to_string(stats.dataHazards) +
                             ", ControlHazards=" + std::to_string(stats.controlHazards) +
+                            ", DataHazardStalls=" + std::to_string(stats.dataHazardStalls) +
+                            ", ControlHazardStalls=" + std::to_string(stats.controlHazardStalls) +
+                            ", PipelineFlushes=" + std::to_string(stats.pipelineFlushes) +
+                            ", DataTransferInstructions=" + std::to_string(stats.dataTransferInstructions) +
+                            ", ALUInstructions=" + std::to_string(stats.aluInstructions) +
+                            ", ControlInstructions=" + std::to_string(stats.controlInstructions) +
                             ", Branch Prediction Accuracy=" + std::to_string(branchPredictor.getAccuracy()) + "%";
             }
+            uiResponse.isProgramTerminated = true;
             return false;
         }
         return true;
@@ -647,28 +711,32 @@ bool Simulator::step() {
     catch (const std::runtime_error &e) {
         logs[404] = "Runtime error during step execution: " + std::string(e.what());
         running = false;
+        uiResponse.isProgramTerminated = true;
         return false;
     }
 }
 
 void Simulator::run() {
     int stepCount = 0;
-    while (running) {
-        if (!step())
-            break;
-            
+    while (step()) {   
         stepCount++;
         if (stepCount > MAX_STEPS) {
             logs[400] = "Program execution terminated - exceeded maximum step count (" + std::to_string(MAX_STEPS) + ")";
+            uiResponse.isProgramTerminated = true;
             break;
         }
     }
     logs[200] = "Program execution completed";
     if (isPipeline) {
-        logs[200] += " Stalls: " + std::to_string(stats.stallBubbles) + 
+        logs[200] += "\nStalls: " + std::to_string(stats.stallBubbles) + 
                     " Data Hazards: " + std::to_string(stats.dataHazards) + 
                     " Control Hazards: " + std::to_string(stats.controlHazards) + 
+                    " Data Hazard Stalls: " + std::to_string(stats.dataHazardStalls) + 
+                    " Control Hazard Stalls: " + std::to_string(stats.controlHazardStalls) + 
                     " Pipeline Flushes: " + std::to_string(stats.pipelineFlushes) +
+                    " Data Transfer Instructions: " + std::to_string(stats.dataTransferInstructions) +
+                    " ALU Instructions: " + std::to_string(stats.aluInstructions) +
+                    " Control Instructions: " + std::to_string(stats.controlInstructions) +
                     " Branch Prediction Accuracy: " + std::to_string(branchPredictor.getAccuracy()) + "%";
     }
 }
@@ -736,6 +804,7 @@ void Simulator::flushPipeline(const std::string& reason) {
     }
     
     stats.pipelineFlushes++;
+    uiResponse.isFlushed = true;
     logs[300] = "Pipeline flushed: " + reason;
 }
 
@@ -743,6 +812,10 @@ std::unordered_map<int, std::string> Simulator::getLogs() {
     std::unordered_map<int, std::string> result = logs;
     logs.clear();
     return result;
+}
+
+UIResponse Simulator::getUIResponse() const {
+    return uiResponse;
 }
 
 InstructionRegisters Simulator::getInstructionRegisters() const {

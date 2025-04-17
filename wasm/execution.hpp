@@ -13,6 +13,13 @@
 
 using namespace riscv;
 
+inline void isValidMemory(uint32_t address) {
+    if(address < DATA_SEGMENT_START) {
+        logs[404] = "Memory access error: Address 0x" + std::to_string(address) + " is outside of valid memory range (0x" + std::to_string(DATA_SEGMENT_START) + " - 0x" + std::to_string(MEMORY_SIZE) + ")";
+        throw std::runtime_error(logs[404]);
+    }
+}
+
 inline void initialiseRegisters(uint32_t* registers) {
     std::memset(registers, 0, 32 * sizeof(uint32_t));
     registers[2] = 0x7FFFFFDC;
@@ -22,7 +29,7 @@ inline void initialiseRegisters(uint32_t* registers) {
 }
 
 inline bool isValidAddress(uint32_t addr, uint32_t size) {
-    if (addr + size > MEMORY_SIZE || addr + size < 0x0) {
+    if (addr + size > MEMORY_SIZE || addr + size < TEXT_SEGMENT_START) {
         std::stringstream ss;
         ss << "Memory access error: Address 0x" << std::hex << addr << " with size " << std::dec << size << " is outside of valid memory range (0x0-0x" << std::hex << MEMORY_SIZE << ")";
         logs[404] = ss.str();
@@ -422,6 +429,7 @@ inline void memoryAccess(InstructionNode* node, InstructionRegisters& instructio
             break;
         case Instructions::SB:
             {
+                isValidMemory(address);
                 uint32_t valueToStore = instructionRegisters.RM;
                 isValidAddress(address, 1);
                 dataMap[address] = valueToStore & 0xFF;
@@ -429,6 +437,7 @@ inline void memoryAccess(InstructionNode* node, InstructionRegisters& instructio
             break;
         case Instructions::SH:
             {
+                isValidMemory(address);
                 uint32_t valueToStore = instructionRegisters.RM;
                 isValidAddress(address, 2);
                 dataMap[address] = valueToStore & 0xFF;
@@ -437,6 +446,7 @@ inline void memoryAccess(InstructionNode* node, InstructionRegisters& instructio
             break;
         case Instructions::SW:
             {
+                isValidMemory(address);
                 uint32_t valueToStore = instructionRegisters.RM;
                 isValidAddress(address, 4);
                 dataMap[address] = valueToStore & 0xFF;

@@ -7,7 +7,6 @@ using namespace emscripten;
 val mapToVal(const std::map<uint32_t, std::pair<uint32_t, std::string>>& m) {
     val result = val::object();
     for (const auto& [key, value] : m) {
-        if(value.first == 0xDEADBEEF) continue;
         val pair = val::object();
         pair.set("first", value.first);
         pair.set("second", value.second);
@@ -63,6 +62,15 @@ val instructionRegistersToVal(const InstructionRegisters& regs) {
     result.set("RM", regs.RM);
     result.set("RY", regs.RY);
     result.set("RZ", regs.RZ);
+    return result;
+}
+
+val uiResponseToVal(const UIResponse& response) {
+    val result = val::object();
+    result.set("isFlushed", response.isFlushed);
+    result.set("isStalled", response.isStalled);
+    result.set("isDataForwarded", response.isDataForwarded);
+    result.set("isProgramTerminated", response.isProgramTerminated);
     return result;
 }
 
@@ -137,6 +145,10 @@ public:
         sim.setEnvironment(pipeline, dataForwarding);
     }
 
+    val getUIResponse() const {
+        return uiResponseToVal(sim.getUIResponse());
+    }
+
     val getInstructionRegisters() const {
         return instructionRegistersToVal(sim.getInstructionRegisters());
     }
@@ -153,6 +165,19 @@ EMSCRIPTEN_BINDINGS(simulator_module) {
         .value("EXECUTE", Stage::EXECUTE)
         .value("MEMORY", Stage::MEMORY)
         .value("WRITEBACK", Stage::WRITEBACK);
+
+    value_object<InstructionRegisters>("InstructionRegisters")
+        .field("RA", &InstructionRegisters::RA)
+        .field("RB", &InstructionRegisters::RB)
+        .field("RM", &InstructionRegisters::RM)
+        .field("RY", &InstructionRegisters::RY)
+        .field("RZ", &InstructionRegisters::RZ);
+
+    value_object<UIResponse>("UIResponse")
+        .field("isFlushed", &UIResponse::isFlushed)
+        .field("isStalled", &UIResponse::isStalled)
+        .field("isDataForwarded", &UIResponse::isDataForwarded)
+        .field("isProgramTerminated", &UIResponse::isProgramTerminated);
         
     class_<SimulatorWrapper>("Simulator")
         .constructor<>()
@@ -170,5 +195,6 @@ EMSCRIPTEN_BINDINGS(simulator_module) {
         .function("getActiveStages", &SimulatorWrapper::getActiveStages)
         .function("getStalls", &SimulatorWrapper::getStalls)
         .function("setEnvironment", &SimulatorWrapper::setEnvironment)
-        .function("getInstructionRegisters", &SimulatorWrapper::getInstructionRegisters);
+        .function("getInstructionRegisters", &SimulatorWrapper::getInstructionRegisters)
+        .function("getUIResponse", &SimulatorWrapper::getUIResponse);
 }

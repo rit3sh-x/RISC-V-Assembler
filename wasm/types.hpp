@@ -21,6 +21,15 @@ namespace riscv {
 
     enum class Stage { FETCH, DECODE, EXECUTE, MEMORY, WRITEBACK };
 
+    struct UIResponse {
+        bool isFlushed;
+        bool isStalled;
+        bool isDataForwarded;
+        bool isProgramTerminated;
+
+        UIResponse() : isFlushed(false), isStalled(false), isDataForwarded(false), isProgramTerminated(false) {}
+    };
+
     inline const std::vector<Stage> reverseStageOrder = { Stage::WRITEBACK, Stage::MEMORY, Stage::EXECUTE, Stage::DECODE, Stage::FETCH };
 
     inline const std::vector<Stage> forwardStageOrder = { Stage::FETCH, Stage::DECODE, Stage::EXECUTE, Stage::MEMORY, Stage::WRITEBACK };
@@ -235,15 +244,11 @@ namespace riscv {
         uint32_t controlHazardStalls;
         uint32_t pipelineFlushes;
 
-        bool enablePipeline;
-        bool enableDataForwarding;
-
         SimulationStats()
             : cyclesPerInstruction(0.0), totalCycles(0), instructionsExecuted(0),
               dataTransferInstructions(0), aluInstructions(0), controlInstructions(0),
               stallBubbles(0), dataHazards(0), controlHazards(0),
-              dataHazardStalls(0), controlHazardStalls(0), pipelineFlushes(0),
-              enablePipeline(false), enableDataForwarding(false) {}
+              dataHazardStalls(0), controlHazardStalls(0), pipelineFlushes(0) {}
     };
 
     struct InstructionEncoding {

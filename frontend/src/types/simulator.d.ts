@@ -7,12 +7,28 @@ declare namespace createSimulator {
     WRITEBACK = 4
   }
 
-  export interface InstructionRegisters {
+  export class InstructionRegisters {
     RA: number;
     RB: number;
     RM: number;
     RY: number;
     RZ: number;
+  
+    constructor(RA = 0, RB = 0, RM = 0, RY = 0, RZ = 0) {
+      this.RA = RA;
+      this.RB = RB;
+      this.RM = RM;
+      this.RY = RY;
+      this.RZ = RZ;
+    }
+  }
+
+
+  export interface UIResponse {
+    isFlushed: boolean;
+    isStalled: boolean;
+    isDataForwarded: boolean;
+    isProgramTerminated: boolean;
   }
 
   export interface Simulator {
@@ -31,6 +47,7 @@ declare namespace createSimulator {
     getStalls(): number;
     setEnvironment(pipeline: boolean, dataForwarding: boolean, followedInstruction?: number): void;
     getInstructionRegisters(): InstructionRegisters;
+    getUIResponse(): UIResponse;
   }
 
   export interface SimulatorModuleInstance {
@@ -38,6 +55,8 @@ declare namespace createSimulator {
       new(): Simulator;
     };
     Stage: typeof Stage;
+    InstructionRegisters: typeof InstructionRegisters;
+    UIResponse: typeof UIResponse;
   }
 }
 

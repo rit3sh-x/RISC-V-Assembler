@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Toaster } from "@/components/ui/toaster";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,7 +15,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         {children}
-        <Toaster />
+        <Toaster position="bottom-right" richColors closeButton toastOptions={{ style: { zIndex: 9999 } }} />
       </body>
     </html>
   );

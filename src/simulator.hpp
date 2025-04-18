@@ -61,6 +61,7 @@ public:
     const uint32_t *getRegisters() const;
     std::map<uint32_t, std::pair<uint32_t, std::string>> getTextMap() const;
     uint32_t getCycles() const;
+    SimulationStats getStats();
     InstructionRegisters getInstructionRegisters() const;
     InstructionRegisters getFollowedInstructionRegisters() const;
 };
@@ -702,23 +703,7 @@ bool Simulator::step() {
         stats.instructionsExecuted = instructionCount;
         bool pipelineEmpty = isPipelineEmpty();
         if (!running && pipelineEmpty) {
-            std::cout << GREEN << "Program execution completed" << RESET;
-            if(isPipeline) {
-                std::cout << GREEN << ". Stats: CPI=" << std::fixed << std::setprecision(2) << stats.cyclesPerInstruction
-                          << ", Instructions=" << stats.instructionsExecuted
-                          << ", Cycles=" << stats.totalCycles
-                          << ", Stalls=" << stats.stallBubbles
-                          << ", DataHazards=" << stats.dataHazards
-                          << ", ControlHazards=" << stats.controlHazards
-                          << ", DataHazardStalls=" << stats.dataHazardStalls
-                          << ", ControlHazardStalls=" << stats.controlHazardStalls
-                          << ", PipelineFlushes=" << stats.pipelineFlushes
-                          << ", DataTransferInstructions=" << stats.dataTransferInstructions
-                          << ", ALUInstructions=" << stats.aluInstructions
-                          << ", ControlInstructions=" << stats.controlInstructions
-                          << ", BranchPredictionAccuracy=" << std::fixed << std::setprecision(2) << branchPredictor.getAccuracy() << "%" << RESET;
-            }
-            std::cout << RESET << std::endl;
+            std::cout << GREEN << "Program execution completed" << RESET << std::endl;
             return false;
         }
         return true;
@@ -739,25 +724,7 @@ void Simulator::run() {
             break;
         }
     }
-    std::cout << GREEN << "Program execution completed" << RESET;
-    if(isPipeline) {
-        std::cout << GREEN << "\nStats:"
-                  << "\nCPI: " << std::fixed << std::setprecision(2) << stats.cyclesPerInstruction
-                  << "\nInstructions: " << stats.instructionsExecuted
-                  << "\nCycles: " << stats.totalCycles
-                  << "\nStalls: " << stats.stallBubbles
-                  << "\nData Hazards: " << stats.dataHazards
-                  << "\nControl Hazards: " << stats.controlHazards
-                  << "\nData Hazard Stalls: " << stats.dataHazardStalls
-                  << "\nControl Hazard Stalls: " << stats.controlHazardStalls
-                  << "\nPipeline Flushes: " << stats.pipelineFlushes
-                  << "\nData Transfer Instructions: " << stats.dataTransferInstructions
-                  << "\nALU Instructions: " << stats.aluInstructions
-                  << "\nControl Instructions: " << stats.controlInstructions
-                  << "\nBranch Prediction Accuracy: " << std::fixed << std::setprecision(2) << branchPredictor.getAccuracy() << "%"
-                  << RESET;
-    }
-    std::cout << RESET << std::endl;
+    std::cout << GREEN << "Program execution completed" << RESET << std::endl;
 }
 
 void Simulator::setEnvironment(bool pipeline, bool dataForwarding, bool branchPrediction, uint32_t instruction) {
@@ -805,6 +772,11 @@ InstructionRegisters Simulator::getFollowedInstructionRegisters() const {
 
 const uint32_t *Simulator::getRegisters() const {
     return registers;
+}
+
+SimulationStats Simulator::getStats() {
+    stats.branchMispredictions = branchPredictor.mispredictions;
+    return stats;
 }
 
 #endif

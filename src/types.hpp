@@ -230,7 +230,6 @@ namespace riscv {
 
     struct SimulationStats {
         double cyclesPerInstruction;
-
         uint32_t totalCycles;
         uint32_t instructionsExecuted;
         uint32_t dataTransferInstructions;
@@ -242,12 +241,13 @@ namespace riscv {
         uint32_t dataHazardStalls;
         uint32_t controlHazardStalls;
         uint32_t pipelineFlushes;
+        uint32_t branchMispredictions;
 
         SimulationStats()
             : cyclesPerInstruction(0.0), totalCycles(0), instructionsExecuted(0),
               dataTransferInstructions(0), aluInstructions(0), controlInstructions(0),
-              stallBubbles(0), dataHazards(0), controlHazards(0),
-              dataHazardStalls(0), controlHazardStalls(0), pipelineFlushes(0) {}
+              stallBubbles(0), dataHazards(0), controlHazards(0), dataHazardStalls(0),
+              controlHazardStalls(0), pipelineFlushes(0), branchMispredictions(0) {}
     };
 
     struct InstructionEncoding {

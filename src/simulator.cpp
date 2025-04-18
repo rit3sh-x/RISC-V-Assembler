@@ -181,7 +181,7 @@ int main(int argc, char* argv[]) {
             followInstrNum = UINT32_MAX;
         } else {
             followInstrNum--;
-            followInstrNum*= 4;
+            followInstrNum *= 4;
         }
     }
 
@@ -210,5 +210,36 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Total cycles: " << sim.getCycles() << std::endl;
+
+    try {
+        std::ofstream statsFile("stats.txt");
+        if (!statsFile.is_open()) {
+            std::cerr << "Error: Could not open stats.txt for writing" << std::endl;
+            return 1;
+        }
+
+        SimulationStats stats = sim.getStats();
+        statsFile << "Simulation Statistics:\n";
+        statsFile << "Cycles Per Instruction: " << stats.cyclesPerInstruction << "\n";
+        statsFile << "Total Cycles: " << stats.totalCycles << "\n";
+        statsFile << "Instructions Executed: " << stats.instructionsExecuted << "\n";
+        statsFile << "Data Transfer Instructions: " << stats.dataTransferInstructions << "\n";
+        statsFile << "ALU Instructions: " << stats.aluInstructions << "\n";
+        statsFile << "Control Instructions: " << stats.controlInstructions << "\n";
+        statsFile << "Stall Bubbles: " << stats.stallBubbles << "\n";
+        statsFile << "Data Hazards: " << stats.dataHazards << "\n";
+        statsFile << "Control Hazards: " << stats.controlHazards << "\n";
+        statsFile << "Data Hazard Stalls: " << stats.dataHazardStalls << "\n";
+        statsFile << "Control Hazard Stalls: " << stats.controlHazardStalls << "\n";
+        statsFile << "Pipeline Flushes: " << stats.pipelineFlushes << "\n";
+        statsFile << "Branch Mispredictions: " << stats.branchMispredictions << "\n";
+
+        statsFile.close();
+        std::cout << "Simulation stats written to stats.txt" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Error writing to stats.txt: " << e.what() << std::endl;
+        return 1;
+    }
+
     return 0;
 }

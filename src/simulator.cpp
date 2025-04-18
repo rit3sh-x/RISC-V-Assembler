@@ -95,7 +95,6 @@ int main(int argc, char* argv[]) {
     bool dataForwarding = false;
     bool printRegisters = false;
     bool printPipelineRegs = false;
-    bool printFollowedRegs = false;
     uint32_t followInstrNum = UINT32_MAX;
     bool branchPredict = false;
     bool autoRun = false;
@@ -169,7 +168,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    int length = sim.getTextMap().size();
+    size_t length = sim.getTextMap().size();
     if(length == 0) {
         std::cerr << "Error: No text segment found in the program." << std::endl;
         return 1;
@@ -177,7 +176,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Text segment size: " << length << " bytes" << std::endl;
     }
     if(followInstrNum != UINT32_MAX) {
-        if (followInstrNum >= length || followInstrNum <= 0) {
+        if (followInstrNum >= static_cast<uint32_t>(length) || followInstrNum <= 0) {
             std::cout << ORANGE << "Warning: Follow instruction number is incorrect. Skipping follow" << RESET << std::endl;
             followInstrNum = UINT32_MAX;
         } else {

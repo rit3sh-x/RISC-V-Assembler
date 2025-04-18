@@ -17,4 +17,7 @@ quick_sort.asm
 /instruction_execution
 inst.txt
 /test
+*.gch
+*.exe
+/test.cpp
 /frontend/public/wasm/test

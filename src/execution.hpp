@@ -12,7 +12,7 @@
 
 using namespace riscv;
 
-inline void isValidMemory(uint32_t address) {
+static inline void isValidMemory(uint32_t address) {
     if(address < DATA_SEGMENT_START) {
         std::stringstream ss;
         ss << "Memory access error: Address 0x" + std::to_string(address) + " is outside of valid memory range (0x" + std::to_string(DATA_SEGMENT_START) + " - 0x" + std::to_string(MEMORY_SIZE) + ")";
@@ -20,7 +20,7 @@ inline void isValidMemory(uint32_t address) {
     }
 }
 
-inline void initialiseRegisters(uint32_t* registers) {
+static inline void initialiseRegisters(uint32_t* registers) {
     std::memset(registers, 0, 32 * sizeof(uint32_t));
     registers[2] = 0x7FFFFFDC;
     registers[3] = 0x10000000;

@@ -5,11 +5,9 @@
 #include <unordered_map>
 #include <stdexcept>
 #include <algorithm>
-#include <stdexcept>
 #include <cstdint>
 #include <string>
 #include <vector>
-
 #include <iostream>
 
 #define RESET   "\033[0m"
@@ -45,6 +43,14 @@ namespace riscv {
             default: return "UNKNOWN";
         }
     }
+
+    struct ForwardingStatus {
+        bool raForwarded;
+        bool rbForwarded;
+        bool rmForwarded;
+
+        ForwardingStatus() : raForwarded(false), rbForwarded(false), rmForwarded(false) {}
+    };
     
     enum class InstructionType { R, I, S, SB, U, UJ };
 
@@ -209,13 +215,6 @@ namespace riscv {
               instructionName(other.instructionName) {}
     };
 
-    struct ForwardingStatus {
-        bool raForwarded;
-        bool rbForwarded;
-
-        ForwardingStatus() : raForwarded(false), rbForwarded(false) {}
-    };
-
     struct InstructionRegisters {
         uint32_t RA, RB, RM, RY, RZ;
         InstructionRegisters() : RA(0), RB(0), RM(0), RY(0), RZ(0) {}
@@ -226,6 +225,7 @@ namespace riscv {
         uint32_t pc;
         uint32_t opcode;
         Stage stage;
+        uint32_t value;
     };
 
     struct SimulationStats {

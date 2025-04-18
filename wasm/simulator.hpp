@@ -26,7 +26,6 @@ private:
 
     std::map<Stage, InstructionNode*> pipeline;
     InstructionRegisters instructionRegisters;
-    InstructionRegisters interStageRegisters;
     ForwardingStatus forwardingStatus;
     UIResponse uiResponse;
 
@@ -70,7 +69,6 @@ public:
 
 Simulator::Simulator() : PC(TEXT_SEGMENT_START),
                          instructionRegisters(InstructionRegisters()),
-                         interStageRegisters(InstructionRegisters()),
                          forwardingStatus(ForwardingStatus()),
                          uiResponse(UIResponse()),
                          running(false),
@@ -150,7 +148,6 @@ void Simulator::reset() {
     }
     
     instructionRegisters = InstructionRegisters();
-    interStageRegisters = InstructionRegisters();
     initialiseRegisters(registers);
     registerDependencies.clear();
     dataMap.clear();
@@ -170,33 +167,42 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::vector<Reg
     if (!isPipeline || !isDataForwarding) return;
 
     forwardingStatus = ForwardingStatus();
-    logs[100] = "";
 
     for (const auto& dep : depsSnapshot) {
-        logs[100] += std::to_string(dep.reg) + " ";
         if (dep.stage == Stage::EXECUTE && dep.reg != 0) {
             uint32_t opcode = dep.opcode & 0x7F;
             bool isLoad = (opcode == 0x03);
             if (!isLoad) {
                 if (node.rs1 != 0 && node.rs1 == dep.reg) {
-                    instructionRegisters.RA = interStageRegisters.RY;
+                    instructionRegisters.RA = dep.value;
                     forwardingStatus.raForwarded = true;
                     uiResponse.isDataForwarded = true;
-                    if(logs.find(300) != logs.end()) {
+                    if (logs.find(300) != logs.end()) {
                         logs[300] += "\nData Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
-                    } else{
+                    } else {
                         logs[300] = "Data Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
                     }
                 }
                 if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S ||
                      node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg) {
-                    instructionRegisters.RB = interStageRegisters.RY;
-                    forwardingStatus.rbForwarded = true;
-                    uiResponse.isDataForwarded = true;
-                    if(logs.find(300) != logs.end()) {
-                        logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
-                    } else{
-                        logs[300] = "Data Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                    if (node.instructionType == InstructionType::S) {
+                        instructionRegisters.RM = dep.value;
+                        forwardingStatus.rmForwarded = true;
+                        uiResponse.isDataForwarded = true;
+                        if (logs.find(300) != logs.end()) {
+                            logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                        } else {
+                            logs[300] = "Data Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                        }
+                    } else {
+                        instructionRegisters.RB = dep.value;
+                        forwardingStatus.rbForwarded = true;
+                        uiResponse.isDataForwarded = true;
+                        if (logs.find(300) != logs.end()) {
+                            logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                        } else {
+                            logs[300] = "Data Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                        }
                     }
                 }
             }
@@ -204,31 +210,41 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::vector<Reg
     }
 
     for (const auto& dep : depsSnapshot) {
-        logs[100] += std::to_string(dep.reg) + " ";
         if (dep.stage == Stage::MEMORY && dep.reg != 0) {
             uint32_t opcode = dep.opcode & 0x7F;
             bool isLoad = (opcode == 0x03);
 
             if (node.rs1 != 0 && node.rs1 == dep.reg && !forwardingStatus.raForwarded) {
-                instructionRegisters.RA = interStageRegisters.RZ;
+                instructionRegisters.RA = dep.value;
                 forwardingStatus.raForwarded = true;
                 uiResponse.isDataForwarded = true;
-                if(logs.find(300) != logs.end()) {
+                if (logs.find(300) != logs.end()) {
                     logs[300] += "\nData Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
-                } else{
+                } else {
                     logs[300] = "Data Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
                 }
             }
             if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S ||
                  node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg &&
-                 !forwardingStatus.rbForwarded) {
-                instructionRegisters.RB = interStageRegisters.RZ;
-                forwardingStatus.rbForwarded = true;
-                uiResponse.isDataForwarded = true;
-                if(logs.find(300) != logs.end()) {
-                    logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
-                } else{
-                    logs[300] = "Data Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                 !forwardingStatus.rbForwarded && !forwardingStatus.rmForwarded) {
+                if (node.instructionType == InstructionType::S) {
+                    instructionRegisters.RM = dep.value;
+                    forwardingStatus.rmForwarded = true;
+                    uiResponse.isDataForwarded = true;
+                    if (logs.find(300) != logs.end()) {
+                        logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                    } else {
+                        logs[300] = "Data Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                    }
+                } else {
+                    instructionRegisters.RB = dep.value;
+                    forwardingStatus.rbForwarded = true;
+                    uiResponse.isDataForwarded = true;
+                    if (logs.find(300) != logs.end()) {
+                        logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                    } else {
+                        logs[300] = "Data Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (isLoad ? " [Load]" : "");
+                    }
                 }
             }
         }
@@ -323,8 +339,15 @@ void Simulator::updateDependencies(InstructionNode& node, Stage stage) {
             dep.pc = node.PC;
             dep.stage = stage;
             dep.opcode = node.opcode;
+            dep.value = 0;
             registerDependencies.push_back(dep);
         }
+    } else if (stage == Stage::EXECUTE && it != registerDependencies.end()) {
+        it->stage = stage;
+        it->value = instructionRegisters.RY;
+    } else if (stage == Stage::MEMORY && it != registerDependencies.end()) {
+        it->stage = stage;
+        it->value = instructionRegisters.RZ;
     } else if (it != registerDependencies.end()) {
         it->stage = stage;
     }
@@ -363,12 +386,6 @@ void Simulator::advancePipeline() {
     }
 
     std::vector<RegisterDependency> depsSnapshot = registerDependencies;
-
-    for (const auto& stage : forwardStageOrder) {
-        if (pipeline[stage] != nullptr) {
-            updateDependencies(*pipeline[stage], stage);
-        }
-    }
 
     forwardingStatus = ForwardingStatus();
 
@@ -430,8 +447,6 @@ void Simulator::advancePipeline() {
                     continue;
                 }
             } else if (node->stage == Stage::DECODE) {
-                interStageRegisters.RA = instructionRegisters.RA;
-                interStageRegisters.RB = instructionRegisters.RB;
                 decodeInstruction(node, instructionRegisters, registers);
 
                 uint32_t opcode = node->opcode & 0x7F;
@@ -453,7 +468,6 @@ void Simulator::advancePipeline() {
                 applyDataForwarding(*node, depsSnapshot);
 
                 bool taken = false;
-                interStageRegisters.RY = instructionRegisters.RY;
                 executeInstruction(node, instructionRegisters, registers, PC, taken);
                 updateDependencies(*node, Stage::EXECUTE);
             
@@ -525,9 +539,6 @@ void Simulator::advancePipeline() {
                         continue;
                     }
 
-                    interStageRegisters.RA = instructionRegisters.RA;
-                    interStageRegisters.RB = instructionRegisters.RB;
-
                     decodeInstruction(node, instructionRegisters, registers);
 
                     if (!isDataForwarding && checkDependencies(*node)) {
@@ -586,7 +597,6 @@ void Simulator::advancePipeline() {
                     applyDataForwarding(*node, depsSnapshot);
 
                     bool taken = false;
-                    interStageRegisters.RY = instructionRegisters.RY;
                     executeInstruction(node, instructionRegisters, registers, PC, taken);
                     updateDependencies(*node, Stage::EXECUTE);
                     
@@ -616,8 +626,6 @@ void Simulator::advancePipeline() {
                 
             case Stage::MEMORY:
                 {
-                    interStageRegisters.RZ = instructionRegisters.RZ;
-                    interStageRegisters.RM = instructionRegisters.RM;
                     memoryAccess(node, instructionRegisters, registers, dataMap);
                     updateDependencies(*node, Stage::MEMORY);
                     node->stage = Stage::WRITEBACK;

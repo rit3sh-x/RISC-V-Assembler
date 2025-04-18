@@ -37,8 +37,9 @@ namespace riscv {
     struct ForwardingStatus {
         bool raForwarded;
         bool rbForwarded;
+        bool rmForwarded;
 
-        ForwardingStatus() : raForwarded(false), rbForwarded(false) {}
+        ForwardingStatus() : raForwarded(false), rbForwarded(false), rmForwarded(false) {}
     };
 
     inline std::string stageToString(Stage stage) {
@@ -227,6 +228,7 @@ namespace riscv {
         uint32_t pc;
         uint32_t opcode;
         Stage stage;
+        uint32_t value;
     };
 
     struct SimulationStats {

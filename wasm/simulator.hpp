@@ -170,8 +170,10 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::vector<Reg
     if (!isPipeline || !isDataForwarding) return;
 
     forwardingStatus = ForwardingStatus();
+    logs[100] = "";
 
     for (const auto& dep : depsSnapshot) {
+        logs[100] += std::to_string(dep.reg) + " ";
         if (dep.stage == Stage::EXECUTE && dep.reg != 0) {
             uint32_t opcode = dep.opcode & 0x7F;
             bool isLoad = (opcode == 0x03);
@@ -202,6 +204,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::vector<Reg
     }
 
     for (const auto& dep : depsSnapshot) {
+        logs[100] += std::to_string(dep.reg) + " ";
         if (dep.stage == Stage::MEMORY && dep.reg != 0) {
             uint32_t opcode = dep.opcode & 0x7F;
             bool isLoad = (opcode == 0x03);
@@ -450,8 +453,8 @@ void Simulator::advancePipeline() {
                 applyDataForwarding(*node, depsSnapshot);
 
                 bool taken = false;
-                executeInstruction(node, instructionRegisters, registers, PC, taken);
                 interStageRegisters.RY = instructionRegisters.RY;
+                executeInstruction(node, instructionRegisters, registers, PC, taken);
                 updateDependencies(*node, Stage::EXECUTE);
             
                 if (isPipeline && (node->isBranch || node->isJump)) {
@@ -583,8 +586,8 @@ void Simulator::advancePipeline() {
                     applyDataForwarding(*node, depsSnapshot);
 
                     bool taken = false;
-                    executeInstruction(node, instructionRegisters, registers, PC, taken);
                     interStageRegisters.RY = instructionRegisters.RY;
+                    executeInstruction(node, instructionRegisters, registers, PC, taken);
                     updateDependencies(*node, Stage::EXECUTE);
                     
                     if (isPipeline && (node->isBranch || node->isJump)) {
@@ -613,9 +616,9 @@ void Simulator::advancePipeline() {
                 
             case Stage::MEMORY:
                 {
-                    memoryAccess(node, instructionRegisters, registers, dataMap);
                     interStageRegisters.RZ = instructionRegisters.RZ;
                     interStageRegisters.RM = instructionRegisters.RM;
+                    memoryAccess(node, instructionRegisters, registers, dataMap);
                     updateDependencies(*node, Stage::MEMORY);
                     node->stage = Stage::WRITEBACK;
                     newPipeline[Stage::WRITEBACK] = new InstructionNode(*node);

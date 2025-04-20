@@ -78,7 +78,7 @@ type MemoryCell = {
   bytes: string[]
 }
 
-const toSignedDecimal = (value:number, bits = 32) => {
+const toSignedDecimal = (value: number, bits = 32) => {
   const maxPositive = Math.pow(2, bits - 1) - 1;
   if (value > maxPositive) {
     return value - Math.pow(2, bits);
@@ -86,8 +86,8 @@ const toSignedDecimal = (value:number, bits = 32) => {
   return value;
 };
 
-const byteToSignedDecimal = (value:number) => toSignedDecimal(value, 8);
-const wordToSignedDecimal = (value:number) => toSignedDecimal(value, 32);
+const byteToSignedDecimal = (value: number) => toSignedDecimal(value, 8);
+const wordToSignedDecimal = (value: number) => toSignedDecimal(value, 32);
 
 const MEMORY_SEGMENTS = {
   CODE: "0x00000000",
@@ -172,14 +172,14 @@ const RegisterTable = memo(({
 ));
 RegisterTable.displayName = "RegisterTable";
 
-const PipelineStages = memo(({ activeStates, running }: { 
-  activeStates: Record<number, { active: boolean, instruction: number }>, 
-  running: boolean 
+const PipelineStages = memo(({ activeStates, running }: {
+  activeStates: Record<number, { active: boolean, instruction: number }>,
+  running: boolean
 }) => {
   const stageEntries = Object.entries(StageNames).map(([stageNumStr, stageName]) => {
     const stageNum = parseInt(stageNumStr);
     const stageState = activeStates[stageNum] || { active: false, instruction: 0 };
-    
+
     return (
       <div
         key={stageName}
@@ -250,12 +250,12 @@ interface TextMapEntry {
   second: string;
 }
 
-export default function Simulator({ 
-  text, 
-  simulatorInstance, 
-  controls, 
+export default function Simulator({
+  text,
+  simulatorInstance,
+  controls,
   onSidebarOpenChange,
-  onRunningChange 
+  onRunningChange
 }: SimulatorProps) {
   const [registers, setRegisters] = useState<number[]>(Array.from({ length: 32 }, () => 0));
   const [cycles, setCycles] = useState<number>(0);
@@ -300,10 +300,10 @@ export default function Simulator({
       simulatorInstance.reset();
     }
   }, [simulatorInstance]);
-  
+
   const updateSimulatorState = useCallback(() => {
     if (!simulatorInstance) return;
-    
+
     setUIResponse(simulatorInstance.getUIResponse());
 
     const newTerminal = simulatorInstance.getLogs();
@@ -319,9 +319,9 @@ export default function Simulator({
     setPipelineRegisters(simulatorInstance.getInstructionRegisters());
     setInstruction(simulatorInstance.getPC());
     if (newTerminal["404"]) {
-        setTimeout(() => showTerminalErrorDialog(newTerminal["404"]), 0);
+      setTimeout(() => showTerminalErrorDialog(newTerminal["404"]), 0);
     }
-}, [simulatorInstance, showTerminalErrorDialog]);
+  }, [simulatorInstance, showTerminalErrorDialog]);
 
   const memoizedUpdateMemoryEntries = useMemo(() => {
     return () => {
@@ -329,7 +329,7 @@ export default function Simulator({
         const addressNum = memoryStartIndex + index * 4;
         const address = addressNum.toString();
         const addressString = addressNum.toString(16).padStart(8, '0').toUpperCase();
-  
+
         if (addressNum >= parseInt(MEMORY_SEGMENTS.END, 16)) {
           return {
             address: "----------",
@@ -337,11 +337,11 @@ export default function Simulator({
             bytes: ["--", "--", "--", "--"]
           };
         }
-  
+
         let value = 0;
         let found = false;
         let bytesDisplay = ["00", "00", "00", "00"];
-  
+
         if (addressNum >= 0x00000000 && addressNum <= 0x0FFFFFFC && textMap[address]) {
           value = textMap[address].first;
           found = true;
@@ -407,34 +407,34 @@ export default function Simulator({
 
   useEffect(() => {
     if (uiResponse.isFlushed) {
-        toast.info("Pipeline Flushed", { description: "The pipeline has been flushed." });
-      }
+      toast.info("Pipeline Flushed", { description: "The pipeline has been flushed." });
+    }
   }, [uiResponse.isFlushed]);
 
   useEffect(() => {
-      if (uiResponse.isStalled) {
-          toast.warning("Pipeline Stalled", { description: "The pipeline has encountered a stall." });
-      }
+    if (uiResponse.isStalled) {
+      toast.warning("Pipeline Stalled", { description: "The pipeline has encountered a stall." });
+    }
   }, [uiResponse.isStalled]);
 
   useEffect(() => {
-      if (uiResponse.isDataForwarded) {
-          toast.success("Data Forwarded", { description: "Data forwarding has occurred in the pipeline." });
-      }
+    if (uiResponse.isDataForwarded) {
+      toast.success("Data Forwarded", { description: "Data forwarding has occurred in the pipeline." });
+    }
   }, [uiResponse.isDataForwarded]);
 
   useEffect(() => {
-      if (uiResponse.isProgramTerminated) {
-          toast.error("Program Terminated", { description: "The program has terminated execution." });
-      }
+    if (uiResponse.isProgramTerminated) {
+      toast.error("Program Terminated", { description: "The program has terminated execution." });
+    }
   }, [uiResponse.isProgramTerminated]);
 
   const handleAssemble = useCallback(() => {
     const success = simulatorInstance.loadProgram(text);
     if (success) {
-      toast.success("Program Loaded",{ description: "RISC-V program loaded successfully.", });
+      toast.success("Program Loaded", { description: "RISC-V program loaded successfully.", });
     } else {
-      toast.error("Load Failed",{description: "Failed to load program: " });
+      toast.error("Load Failed", { description: "Failed to load program: " });
     }
     updateSimulatorState();
   }, [text, simulatorInstance, updateSimulatorState]);
@@ -588,33 +588,42 @@ export default function Simulator({
                         {Object.keys(textMap).length > 0 ? (
                           Object.entries(textMap as Record<string, TextMapEntry>).map(([key, instObj]) => {
                             const instructionAddress = parseInt(key);
-                            let highlightColor = "";
+                            const matchingStageColors: string[] = [];
+
                             Object.entries(activeStates).forEach(([stageKey, stageInfo]) => {
                               if (stageInfo.active && stageInfo.instruction === instructionAddress) {
                                 const stageNum = parseInt(stageKey) as Stage;
                                 const stageName = StageNames[stageNum];
-                                highlightColor = StageColors[stageName];
+                                const color = StageColors[stageName];
+                                matchingStageColors.push(color);
                               }
                             });
-                            
+
+                            const gradientBackground = matchingStageColors.length > 1
+                              ? `linear-gradient(90deg, ${matchingStageColors.map((color, i, arr) => {
+                                const total = arr.length;
+                                const step = 100 / (total + 1);
+                                const base = Math.round((i + 1) * step);
+                                const offset = 3;
+                                return `${color} ${base - offset}%, ${color} ${base + offset}%`;
+                              }).join(', ')})`
+                              : matchingStageColors[0] || "";
+
+                            const textColor = matchingStageColors.length > 0 ? "white" : "inherit";
+
                             return (
-                              <tr key={key} className="hover:bg-gray-50 h-10">
-                                <td 
-                                  className="py-2 px-3 font-mono whitespace-nowrap"
-                                  style={{ backgroundColor: highlightColor, color: highlightColor ? "white" : "inherit" }}
-                                >
+                              <tr
+                                key={key}
+                                className="hover:bg-gray-50 h-10"
+                                style={{ background: gradientBackground || undefined }}
+                              >
+                                <td className="py-2 px-3 font-mono whitespace-nowrap" style={{ color: textColor }}>
                                   0x{instructionAddress.toString(16).padStart(8, '0').toUpperCase()}
                                 </td>
-                                <td 
-                                  className="py-2 px-3 font-mono whitespace-nowrap"
-                                  style={{ backgroundColor: highlightColor, color: highlightColor ? "white" : "inherit" }}
-                                >
+                                <td className="py-2 px-3 font-mono whitespace-nowrap" style={{ color: textColor }}>
                                   0x{instObj.first.toString(16).padStart(8, '0').toUpperCase()}
                                 </td>
-                                <td 
-                                  className="py-2 px-3 font-mono whitespace-nowrap"
-                                  style={{ backgroundColor: highlightColor, color: highlightColor ? "white" : "inherit" }}
-                                >
+                                <td className="py-2 px-3 font-mono whitespace-nowrap" style={{ color: textColor }}>
                                   {instObj.second}
                                 </td>
                               </tr>

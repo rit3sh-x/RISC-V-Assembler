@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <cstdint>
+#include <cstring>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -186,7 +187,6 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
                     int32_t imm = ((node->instruction >> 25) & 0x7F) << 5 | ((node->instruction >> 7) & 0x1F);
                     if (imm & 0x800) imm |= 0xFFFFF000;
                     instructionRegisters.RB = imm;
-                    instructionRegisters.RM = registers[node->rs2];
                     break;
                 }
             }
@@ -202,7 +202,6 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
                                              ((node->instruction >> 25) & 0x3F) << 5 | 
                                              ((node->instruction >> 8) & 0xF) << 1;
                     if (instructionRegisters.RB & 0x1000) instructionRegisters.RB |= 0xFFFFE000;
-                    instructionRegisters.RM = registers[node->rs2];
                     break;
                 }
             }
@@ -250,6 +249,11 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
         case Instructions::BLT:
         case Instructions::BGE:
             node->isBranch = true;
+            break;
+        case Instructions::LB:
+        case Instructions::LH:
+        case Instructions::LW:
+            node->isLoad = true;
             break;
         default:
             break;
@@ -397,6 +401,9 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
             break;
         default:
             break;
+    }
+    if (node->instructionType == InstructionType::S || node->instructionType == InstructionType::SB) {
+        instructionRegisters.RM = registers[node->rs2];
     }
 }
 

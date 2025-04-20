@@ -204,18 +204,19 @@ namespace riscv {
         uint32_t PC, opcode, rs1, rs2, rd, instruction, func3, func7;
         InstructionType instructionType;
         Stage stage;
-        bool stalled, isBranch, isJump;
+        bool stalled, isBranch, isJump, isLoad;
         Instructions instructionName;
+        uint32_t uniqueId;
     
         InstructionNode(uint32_t pc = 0) 
-            : PC(pc), opcode(0), rs1(0), rs2(0), rd(0), instruction(0), func3(0), func7(0), stage(Stage::FETCH), stalled(false), isBranch(false), isJump(false), instructionName(Instructions::INVALID) {}
+            : PC(pc), opcode(0), rs1(0), rs2(0), rd(0), instruction(0), func3(0), func7(0), stage(Stage::FETCH), stalled(false), isBranch(false), isJump(false), isLoad(false), instructionName(Instructions::INVALID), uniqueId(0){}
 
         InstructionNode(const InstructionNode& other)
             : PC(other.PC), opcode(other.opcode), rs1(other.rs1), rs2(other.rs2), rd(other.rd), 
               instruction(other.instruction), func3(other.func3), func7(other.func7),
               instructionType(other.instructionType), stage(other.stage), 
-              stalled(other.stalled), isBranch(other.isBranch), isJump(other.isJump), 
-              instructionName(other.instructionName) {}
+              stalled(other.stalled), isBranch(other.isBranch), isJump(other.isJump), isLoad(other.isLoad), 
+              instructionName(other.instructionName), uniqueId(other.uniqueId) {}
     };
 
     struct InstructionRegisters {
@@ -225,10 +226,12 @@ namespace riscv {
 
     struct RegisterDependency {
         uint32_t reg;
-        uint32_t pc;
         uint32_t opcode;
+        uint32_t pc;
         Stage stage;
         uint32_t value;
+        bool isLoad;
+        uint32_t uniqueId;
     };
 
     struct SimulationStats {

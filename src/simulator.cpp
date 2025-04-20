@@ -39,6 +39,7 @@ void printDetails(bool reg, bool normalIR , bool follow) {
 
     if(follow) {
         followedRegisters = globalSimulatorPtr->getFollowedInstructionRegisters();
+        std::cout << GREEN << "Change occured in cycle: " << globalSimulatorPtr->getCycles() << RESET << std::endl;
         std::cout << ORANGE << "Followed Registers:" << RESET << std::endl;
         std::cout << ORANGE << "RA : 0x" << std::setw(8) << std::setfill('0') << std::hex << followedRegisters.RA << RESET << std::endl;
         std::cout << ORANGE << "RB : 0x" << std::setw(8) << std::setfill('0') << std::hex << followedRegisters.RB << RESET << std::endl;
@@ -64,7 +65,7 @@ void printUsage() {
     std::cout << YELLOW << "  -l, --pipeline-regs        Print pipeline register values only" << RESET << std::endl;
     std::cout << YELLOW << "  -b, --branch-predict       Enable branch prediction" << RESET << std::endl;
     std::cout << YELLOW << "  -a, --auto                 Run simulation automatically (non-interactive)" << RESET << std::endl;
-    std::cout << YELLOW << "  -f, --follow NUM           Track specific instruction by number" << RESET << std::endl;
+    std::cout << YELLOW << "  -f, --follow [n|p]=NUM     Track specific instruction by number (n=NUM) or PC (p=NUM), supports decimal or hex (0x prefix)" << RESET << std::endl;
     std::cout << YELLOW << "  -i, --input FILE           Specify input assembly file (default: input.asm)" << RESET << std::endl;
     std::cout << YELLOW << "  -h, --help                 Display this help message" << RESET << std::endl;
 }
@@ -99,6 +100,7 @@ int main(int argc, char* argv[]) {
     bool branchPredict = false;
     bool autoRun = false;
     std::string inputFile = "input.asm";
+    std::string followArg;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--pipeline") == 0) {
@@ -134,20 +136,42 @@ int main(int argc, char* argv[]) {
             }
         } else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--follow") == 0) {
             if (i + 1 < argc) {
-                try {
-                    followInstrNum = std::stoul(argv[++i]);
-                    std::cout << "Following instruction: " << followInstrNum << std::endl;
-                } catch (const std::exception& e) {
-                    std::cerr << "Error: Invalid instruction number: " << argv[i] << std::endl;
+                followArg = argv[++i];
+                bool isPC = false;
+                size_t equalPos = followArg.find('=');
+                std::string typeStr, numStr;
+                
+                if (equalPos != std::string::npos) {
+                    typeStr = followArg.substr(0, equalPos);
+                    numStr = followArg.substr(equalPos + 1);
+                    if (typeStr == "p") {
+                        isPC = true;
+                    } else if (typeStr != "n") {
+                        std::cerr << "Error: Invalid follow type '" << typeStr << "'. Use n=NUM for instruction number or p=NUM for PC" << std::endl;
+                        printUsage();
+                        return 1;
+                    }
+                } else {
+                    std::cerr << "Error: Invalid follow format. Use n=NUM or p=NUM" << std::endl;
                     printUsage();
                     return 1;
                 }
-            } else {
-                std::cerr << "Error: Missing follow instruction number" << std::endl;
-                printUsage();
-                return 1;
-            }
-        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+
+                if (numStr.empty()) {
+                    std::cerr << "Error: Missing number after '=' in follow argument" << std::endl;
+                    printUsage();
+                    return 1;
+                }
+
+                try {
+                    followInstrNum = std::stoul(numStr, nullptr, 0);
+                    std::cout << "Following instruction: " << followArg << (isPC ? " (PC)" : " (instruction number)") << std::endl;
+                } catch (const std::exception& e) {
+                    std::cerr << "Error: Invalid instruction number or PC: " << numStr << std::endl;
+                    printUsage();
+                    return 1;
+                }
+            } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             printUsage();
             return 0;
         } else {
@@ -175,13 +199,27 @@ int main(int argc, char* argv[]) {
     } else {
         std::cout << "Text segment size: " << length << " bytes" << std::endl;
     }
+    
     if(followInstrNum != UINT32_MAX) {
-        if (followInstrNum >= static_cast<uint32_t>(length) || followInstrNum <= 0) {
-            std::cout << ORANGE << "Warning: Follow instruction number is incorrect. Skipping follow" << RESET << std::endl;
-            followInstrNum = UINT32_MAX;
+        bool isValid = true;
+        std::string errorMsg;
+        if (followArg.find("p=") != std::string::npos) {
+            if (followInstrNum >= static_cast<uint32_t>(length) || (followInstrNum % 4) != 0) {
+                isValid = false;
+                errorMsg = "PC is outside text segment or not 4-byte aligned";
+            }
         } else {
-            followInstrNum--;
-            followInstrNum *= 4;
+            if (followInstrNum == 0 || followInstrNum > static_cast<uint32_t>(length / 4)) {
+                isValid = false;
+                errorMsg = "Instruction number is out of range";
+            } else {
+                followInstrNum = (followInstrNum - 1) * 4;
+            }
+        }
+
+        if (!isValid) {
+            std::cout << ORANGE << "Warning: " << errorMsg << ". Skipping follow" << RESET << std::endl;
+            followInstrNum = UINT32_MAX;
         }
     }
 

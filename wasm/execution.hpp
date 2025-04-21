@@ -260,13 +260,13 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
     }
 }
 
-inline void executeInstruction(InstructionNode* node, InstructionRegisters& instructionRegisters, uint32_t* registers, uint32_t& PC, bool& taken) {
+inline void executeInstruction(InstructionNode* node, InstructionRegisters& instructionRegisters, uint32_t* registers, uint32_t& PC, bool& taken, ForwardingStatus& forwardingStatus) {
     uint32_t result = 0;
     taken = false;
     std::stringstream ss;
     Instructions instr = node->instructionName;
 
-    if (node->instructionType == InstructionType::S || node->instructionType == InstructionType::SB) {
+    if ((node->instructionType == InstructionType::S || node->instructionType == InstructionType::SB) && !forwardingStatus.rmForwarded) {
         instructionRegisters.RM = registers[node->rs2];
     }
 

@@ -468,7 +468,7 @@ void Simulator::advancePipeline() {
 
                     bool taken = false;
                     uint32_t oldPC = PC;
-                    executeInstruction(node, instructionRegisters, registers, PC, taken);
+                    executeInstruction(node, instructionRegisters, registers, PC, taken, forwardingStatus);
                     updateDependencies(*node, Stage::EXECUTE);
                     
                     if (isPipeline && (node->isBranch || node->isJump)) {

@@ -196,11 +196,12 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
             for (const auto &[name, op] : sbTypeEncoding.opcodeMap) {
                 if (op == node->opcode && sbTypeEncoding.func3Map.at(name) == node->func3) {
                     node->instructionName = stringToInstruction.at(name);
-                    instructionRegisters.RB = ((node->instruction >> 31) & 0x1) << 12 | 
-                                             ((node->instruction >> 7) & 0x1) << 11 | 
-                                             ((node->instruction >> 25) & 0x3F) << 5 | 
-                                             ((node->instruction >> 8) & 0xF) << 1;
-                    if (instructionRegisters.RB & 0x1000) instructionRegisters.RB |= 0xFFFFE000;
+                    int32_t imm = ((node->instruction >> 31) & 0x1) << 12 | 
+                                  ((node->instruction >> 7) & 0x1) << 11 | 
+                                  ((node->instruction >> 25) & 0x3F) << 5 | 
+                                  ((node->instruction >> 8) & 0xF) << 1;
+                    if (imm & 0x1000) imm |= 0xFFFFE000;
+                    instructionRegisters.RB = imm;
                     break;
                 }
             }
@@ -264,6 +265,10 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
     taken = false;
     std::stringstream ss;
     Instructions instr = node->instructionName;
+
+    if (node->instructionType == InstructionType::S || node->instructionType == InstructionType::SB) {
+        instructionRegisters.RM = registers[node->rs2];
+    }
 
     switch (instr) {
         case Instructions::ADD:
@@ -402,9 +407,6 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
             break;
         default:
             break;
-    }
-    if (node->instructionType == InstructionType::S || node->instructionType == InstructionType::SB) {
-        instructionRegisters.RM = registers[node->rs2];
     }
 }
 

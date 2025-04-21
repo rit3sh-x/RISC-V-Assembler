@@ -52,14 +52,15 @@ private:
     bool checkLoadUseHazard(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot);
     bool isPipelineEmpty() const;
     void reset();
-
-public:
+    
+    public:
     Simulator();
     bool loadProgram(const std::string &input);
     bool step();
     void run();
     void setEnvironment(bool pipeline, bool dataForwarding, bool branchPrediction, uint32_t instruction);
     const uint32_t *getRegisters() const;
+    uint32_t getFollowedPC() const;
     std::map<uint32_t, std::pair<uint32_t, std::string>> getTextMap() const;
     uint32_t getCycles() const;
     SimulationStats getStats();
@@ -181,19 +182,23 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                     instructionRegisters.RA = dep.value;
                     forwardingStatus.raForwarded = true;
 
-                    std::cout << YELLOW << "Data Forwarding: EX->EX for rs1 (reg " << node.rs1 << ") of instruction at PC=" << node.PC << " (" << parseInstructions(node.instruction) << ")" << RESET << std::endl;
+                    std::cout << YELLOW << "\nData Forwarding: EX->EX for rs1 (reg " << node.rs1 << ") of instruction at PC=" << node.PC << " (" << textMap[node.PC].second << ") from instruction (" << textMap[dep.pc].second << ")" << RESET << std::endl;
                 }
                 if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg) {
-                    if (node.instructionType == InstructionType::S) {
+                    if (node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) {
                         instructionRegisters.RM = dep.value;
                         forwardingStatus.rmForwarded = true;
 
-                        std::cout << YELLOW << "Data Forwarding: EX->EX for rs2 (reg " << node.rs2 << ") to RM of instruction at PC=" << node.PC << " (" << parseInstructions(node.instruction) << ")" << RESET << std::endl;
+                        std::cout << YELLOW << "Data Forwarding: EX->EX for rs2 (reg " << node.rs2
+                        << ") to RM of instruction at PC=" << node.PC << " (" << textMap[node.PC].second
+                        << ") from instruction (" << textMap[dep.pc].second << ")" << RESET << std::endl;
                     } else {
                         instructionRegisters.RB = dep.value;
                         forwardingStatus.rbForwarded = true;
 
-                        std::cout << YELLOW << "Data Forwarding: EX->EX for rs2 (reg " << node.rs2 << ") of instruction at PC=" << node.PC << " (" << parseInstructions(node.instruction) << ")" << RESET << std::endl;
+                        std::cout << YELLOW << "\nData Forwarding: EX->EX for rs2 (reg " << node.rs2
+                        << ") of instruction at PC=" << node.PC << " (" << textMap[node.PC].second
+                        << ") from instruction (" << textMap[dep.pc].second << ")" << RESET << std::endl;
                     }
                 }
             }
@@ -206,22 +211,28 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                 instructionRegisters.RA = dep.value;
                 forwardingStatus.raForwarded = true;
 
-                std::cout << YELLOW << "Data Forwarding: MEM->EX for rs1 (reg " << node.rs1 << ") of instruction at PC=" << node.PC << " (" << parseInstructions(node.instruction) << ")" << (dep.isLoad ? " [Load]" : "") << RESET << std::endl;
+                std::cout << YELLOW << "\nData Forwarding: MEM->EX for rs1 (reg " << node.rs1
+                << ") of instruction at PC=" << node.PC << " (" << textMap[node.PC].second << ")"
+                << (dep.isLoad ? " [Load]" : "") << " from instruction (" << textMap[dep.pc].second << ")" << RESET << std::endl;
             }
 
             if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S ||
                  node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg &&
                 !forwardingStatus.rbForwarded && !forwardingStatus.rmForwarded) {
-                if (node.instructionType == InstructionType::S) {
+                if (node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) {
                     instructionRegisters.RM = dep.value;
                     forwardingStatus.rmForwarded = true;
 
-                    std::cout << YELLOW << "Data Forwarding: MEM->EX for rs2 (reg " << node.rs2 << ") to RM of instruction at PC=" << node.PC << " (" << parseInstructions(node.instruction) << ")" << (dep.isLoad ? " [Load]" : "") << RESET << std::endl;
+                    std::cout << YELLOW << "\nData Forwarding: MEM->EX for rs2 (reg " << node.rs2
+                    << ") to RM of instruction at PC=" << node.PC << " (" << textMap[node.PC].second << ")"
+                    << (dep.isLoad ? " [Load]" : "") << " from instruction (" << textMap[dep.pc].second << ")" << RESET << std::endl;
                 } else {
                     instructionRegisters.RB = dep.value;
                     forwardingStatus.rbForwarded = true;
 
-                    std::cout << YELLOW << "Data Forwarding: MEM->EX for rs2 (reg " << node.rs2 << ") of instruction at PC=" << node.PC << " (" << parseInstructions(node.instruction) << ")" << (dep.isLoad ? " [Load]" : "") << RESET << std::endl;
+                    std::cout << YELLOW << "\nData Forwarding: MEM->EX for rs2 (reg " << node.rs2
+                    << ") of instruction at PC=" << node.PC << " (" << textMap[node.PC].second << ")"
+                    << (dep.isLoad ? " [Load]" : "") << " from instruction (" << textMap[dep.pc].second << ")" << RESET << std::endl;
                 }
             }
         }
@@ -357,6 +368,10 @@ void Simulator::advancePipeline() {
             }
         }
 
+        if (isFollowing && node->PC == followedInstruction) {
+            std::cout << GREEN << "Cycle " << stats.totalCycles << ": Followed instruction at PC=0x" << std::hex << node->PC << std::dec << " (" << textMap[node->PC].second << ") completes " << stageToString(node->stage) << RESET << std::endl;
+        }
+
         switch (node->stage) {
             case Stage::FETCH:
                 {
@@ -444,27 +459,47 @@ void Simulator::advancePipeline() {
                     applyDataForwarding(*node, depsSnapshot);
 
                     bool taken = false;
+                    uint32_t oldPC = PC;
                     executeInstruction(node, instructionRegisters, registers, PC, taken);
                     updateDependencies(*node, Stage::EXECUTE);
                     
-                    if (isPipeline && isBranchPrediction && (node->isBranch || node->isJump)) {
+                    if (isPipeline && (node->isBranch || node->isJump)) {
                         bool predictedTaken = branchPredictor.getPHT(node->PC);
-                        if(node->instructionName == Instructions::JALR) {
-                            branchPredictor.update(node->PC, taken, (instructionRegisters.RA + instructionRegisters.RB) & ~1);
-                        } else {
-                            branchPredictor.update(node->PC, taken, (node->PC + instructionRegisters.RB));
+                        bool targetMismatch = false;
+                    
+                        if (predictedTaken && taken && branchPredictor.isInBTB(node->PC)) {
+                            uint32_t predictedTarget = branchPredictor.getTarget(node->PC);
+                            targetMismatch = (PC != predictedTarget);
                         }
-
-                        if (predictedTaken != taken) {
+                    
+                        branchPredictor.update(node->PC, taken, PC);
+                    
+                        if (predictedTaken != taken || targetMismatch) {
                             flushPipeline(node->isBranch ? "Branch misprediction" : "Jump misprediction");
                             newPipeline[Stage::FETCH] = nullptr;
                             newPipeline[Stage::DECODE] = nullptr;
                             stats.controlHazards++;
                             stats.controlHazardStalls++;
-                            std::cout << YELLOW << (node->isBranch ? "Branch" : "Jump") + std::string(" misprediction at PC=") + std::to_string(node->PC) + " (" + parseInstructions(node->instruction) + "), actual: " + (taken || node->isJump ? "taken to " + std::to_string(PC) : "not taken") << RESET << std::endl;
+                            
+                            std::string misType = predictedTaken != taken ? "direction" : "target address";
+                            std::string predictionDetails = predictedTaken ? "taken to " + std::to_string(branchPredictor.getTarget(node->PC)) : "not taken";
+
+                            std::cout << YELLOW << (node->isBranch ? "Branch" : "Jump")
+                            << " misprediction (" << misType << ") at PC=" << node->PC
+                            << " (" << parseInstructions(node->instruction) << "), predicted: "
+                            << predictionDetails << ", actual: "
+                            << (taken ? "taken to " + std::to_string(PC) : "not taken")
+                            << RESET << std::endl;
+
+                        } else {
+                            PC = oldPC;
+                            std::cout << YELLOW << (node->isBranch ? "Branch" : "Jump")
+                            << " correctly predicted at PC=" << node->PC
+                            << ", restored PC=" << PC
+                            << RESET << std::endl;
                         }
                     }
-
+                    
                     if (isFollowing && node->PC == followedInstruction) {
                         followedInstructionRegisters.RY = instructionRegisters.RY;
                         followedInstructionRegisters.RM = instructionRegisters.RM;
@@ -634,6 +669,10 @@ const uint32_t *Simulator::getRegisters() const {
 SimulationStats Simulator::getStats() {
     stats.branchMispredictions = branchPredictor.mispredictions;
     return stats;
+}
+
+uint32_t Simulator::getFollowedPC() const {
+    return followedInstruction;
 }
 
 #endif

@@ -39,8 +39,12 @@ void printDetails(bool reg, bool normalIR , bool follow) {
 
     if(follow) {
         followedRegisters = globalSimulatorPtr->getFollowedInstructionRegisters();
-        std::cout << GREEN << "Change occured in cycle: " << globalSimulatorPtr->getCycles() << RESET << std::endl;
-        std::cout << ORANGE << "Followed Registers:" << RESET << std::endl;
+        uint32_t followedPC = globalSimulatorPtr->getFollowedPC();
+        std::string instrStr = globalSimulatorPtr->getTextMap()[followedPC].second;
+        
+        std::cout << GREEN << "Summary for followed instruction at PC=0x" << std::hex << followedPC << std::dec << " (" << instrStr << ")" << RESET << std::endl;
+        std::cout << GREEN << "Last update in cycle: " << globalSimulatorPtr->getCycles() << RESET << std::endl;
+        std::cout << ORANGE << "Final register values:" << RESET << std::endl;
         std::cout << ORANGE << "RA : 0x" << std::setw(8) << std::setfill('0') << std::hex << followedRegisters.RA << RESET << std::endl;
         std::cout << ORANGE << "RB : 0x" << std::setw(8) << std::setfill('0') << std::hex << followedRegisters.RB << RESET << std::endl;
         std::cout << ORANGE << "RM : 0x" << std::setw(8) << std::setfill('0') << std::hex << followedRegisters.RM << RESET << std::endl;
@@ -228,7 +232,10 @@ int main(int argc, char* argv[]) {
     if (autoRun) {
         std::cout << YELLOW << "Running simulation in automatic mode...\n" << RESET << std::endl;
         sim.run();
-        printDetails(printRegisters, printPipelineRegs, followInstrNum == UINT32_MAX);
+        printDetails(printRegisters, printPipelineRegs, false);
+        if (followInstrNum != UINT32_MAX) {
+            printDetails(false, false, true);
+        }
     } else {
         std::cout << YELLOW << "Press Enter to step through execution. Press 'q' then Enter to quit.\n" << RESET << std::endl;
         
@@ -239,12 +246,16 @@ int main(int argc, char* argv[]) {
                 break;
             }
             choice = std::cin.get();
-
+    
             if (choice == '\n') {
                 continue;
             }
-            printDetails(printRegisters, printPipelineRegs, followInstrNum == UINT32_MAX);
+            printDetails(printRegisters, printPipelineRegs, false);
+            
         } while (choice != 'q' && !simulationInterrupted);
+        if (followInstrNum != UINT32_MAX) {
+            printDetails(false, false, true);
+        }
     }
 
     std::cout << "Total cycles: " << sim.getCycles() << std::endl;

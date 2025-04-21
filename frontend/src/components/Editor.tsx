@@ -68,31 +68,6 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
         'editorCursor.foreground': '#0000FF',
       },
     });
-
-    editor.updateOptions({ 
-      theme: 'riscv-theme',
-      cursorBlinking: 'phase',
-      cursorStyle: 'line',
-      cursorWidth: 2
-    });
-
-    const editorDom = editor.getDomNode();
-    if (editorDom) {
-      const styleElement = document.createElement('style');
-      styleElement.textContent = `
-        .monaco-editor .cursor {
-          background-color: #0000FF !important;
-          border-color: #0000FF !important;
-          animation: blink-cursor 1s infinite;
-        }
-        @keyframes blink-cursor {
-          0% { opacity: 1; }
-          50% { opacity: 0; }
-          100% { opacity: 1; }
-        }
-      `;
-      editorDom.appendChild(styleElement);
-    }
     
     editor.focus();
   };
@@ -144,9 +119,6 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
             fontSize: 16,
-            cursorBlinking: 'phase',
-            cursorStyle: 'line',
-            cursorWidth: 4,
             wordWrap: 'on',
             lineNumbers: 'on',
             renderLineHighlight: 'all',

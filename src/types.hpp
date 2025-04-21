@@ -116,15 +116,15 @@ namespace riscv {
         {"t5", 30}, {"x30", 30}, {"t6", 31}, {"x31", 31}
     };
 
-    struct BTBEntry {
-        uint32_t targetAddress;
-        bool valid;
-        
-        BTBEntry() : targetAddress(0), valid(false) {}
-        BTBEntry(uint32_t target) : targetAddress(target), valid(true) {}
-    };
-
     struct BranchPredictor {
+        struct BTBEntry {
+            uint32_t targetAddress;
+            bool valid;
+            
+            BTBEntry() : targetAddress(0), valid(false) {}
+            BTBEntry(uint32_t target) : targetAddress(target), valid(true) {}
+        };
+        
         std::unordered_map<uint32_t, bool> PHT;
         std::unordered_map<uint32_t, BTBEntry> BTB;
         
@@ -398,7 +398,7 @@ namespace riscv {
         static inline const InstructionEncoding& getEncoding() {
             static const InstructionEncoding encoding = {
                 {},
-                {{"addi", 0b000}, {"andi", 0b000}, {"ori", 0b110}, 
+                {{"addi", 0b000}, {"andi", 0b111}, {"ori", 0b110}, 
                  {"lb", 0b000}, {"lh", 0b001}, {"lw", 0b010}, {"jalr", 0b000}},
                 {{"addi", 0b0010011}, {"andi", 0b0010011}, {"ori", 0b0010011}, 
                  {"lb", 0b0000011}, {"lh", 0b0000011}, {"lw", 0b0000011}, {"jalr", 0b1100111}}

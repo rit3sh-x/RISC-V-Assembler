@@ -181,29 +181,29 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                     forwardingStatus.raForwarded = true;
                     uiResponse.isDataForwarded = true;
                     if (logs.find(300) != logs.end()) {
-                        logs[300] += "\nData Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                        logs[300] += "\nData Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ") from instruction (" + textMap[dep.pc].second + ")";
                     } else {
-                        logs[300] = "Data Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                        logs[300] = "Data Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ") from instruction (" + textMap[dep.pc].second + ")";
                     }
                 }
                 if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg) {
-                    if (node.instructionType == InstructionType::S) {
+                    if (node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) {
                         instructionRegisters.RM = dep.value;
                         forwardingStatus.rmForwarded = true;
                         uiResponse.isDataForwarded = true;
                         if (logs.find(300) != logs.end()) {
-                            logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                            logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ") from instruction (" + textMap[dep.pc].second + ")";
                         } else {
-                            logs[300] = "Data Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                            logs[300] = "Data Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ") from instruction (" + textMap[dep.pc].second + ")";
                         }
                     } else {
                         instructionRegisters.RB = dep.value;
                         forwardingStatus.rbForwarded = true;
                         uiResponse.isDataForwarded = true;
                         if (logs.find(300) != logs.end()) {
-                            logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                            logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ") from instruction (" + textMap[dep.pc].second + ")";
                         } else {
-                            logs[300] = "Data Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")";
+                            logs[300] = "Data Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ") from instruction (" + textMap[dep.pc].second + ")";
                         }
                     }
                 }
@@ -218,30 +218,30 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                 forwardingStatus.raForwarded = true;
                 uiResponse.isDataForwarded = true;
                 if (logs.find(300) != logs.end()) {
-                    logs[300] += "\nData Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (dep.isLoad ? " [Load]" : "");
+                    logs[300] += "\nData Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
                 } else {
-                    logs[300] = "Data Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (dep.isLoad ? " [Load]" : "");
+                    logs[300] = "Data Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
                 }
             }
             if ((node.instructionType == InstructionType::R || node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) && node.rs2 != 0 && node.rs2 == dep.reg &&
                  !forwardingStatus.rbForwarded && !forwardingStatus.rmForwarded) {
-                if (node.instructionType == InstructionType::S) {
+                if (node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) {
                     instructionRegisters.RM = dep.value;
                     forwardingStatus.rmForwarded = true;
                     uiResponse.isDataForwarded = true;
                     if (logs.find(300) != logs.end()) {
-                        logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (dep.isLoad ? " [Load]" : "");
+                        logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
                     } else {
-                        logs[300] = "Data Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (dep.isLoad ? " [Load]" : "");
+                        logs[300] = "Data Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
                     }
                 } else {
                     instructionRegisters.RB = dep.value;
                     forwardingStatus.rbForwarded = true;
                     uiResponse.isDataForwarded = true;
                     if (logs.find(300) != logs.end()) {
-                        logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (dep.isLoad ? " [Load]" : "");
+                        logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
                     } else {
-                        logs[300] = "Data Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ")" + (dep.isLoad ? " [Load]" : "");
+                        logs[300] = "Data Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
                     }
                 }
             }
@@ -375,13 +375,11 @@ void Simulator::advancePipeline() {
                 node->stalled = true;
                 newPipeline[node->stage] = new InstructionNode(*node);
                 instructionProcessed = true;
-                if (node->stage == Stage::DECODE || node->stage == Stage::EXECUTE) {
-                    stalled = true;
-                }
+                stalled = true;
                 continue;
             }
         }
-
+        
         switch (node->stage) {
             case Stage::FETCH:
                 {
@@ -402,7 +400,6 @@ void Simulator::advancePipeline() {
                                 PC = branchPredictor.getTarget(node->PC);
                             }
                         }
-
                         node->stage = Stage::DECODE;
                         newPipeline[Stage::DECODE] = new InstructionNode(*node);
                         instructionProcessed = true;
@@ -468,21 +465,35 @@ void Simulator::advancePipeline() {
                     applyDataForwarding(*node, depsSnapshot);
 
                     bool taken = false;
+                    uint32_t oldPC = PC;
                     executeInstruction(node, instructionRegisters, registers, PC, taken);
                     updateDependencies(*node, Stage::EXECUTE);
                     
                     if (isPipeline && (node->isBranch || node->isJump)) {
                         bool predictedTaken = branchPredictor.getPHT(node->PC);
-
+                        bool targetMismatch = false;
+                    
+                        if (predictedTaken && taken && branchPredictor.isInBTB(node->PC)) {
+                            uint32_t predictedTarget = branchPredictor.getTarget(node->PC);
+                            targetMismatch = (PC != predictedTarget);
+                        }
+                    
                         branchPredictor.update(node->PC, taken, PC);
-
-                        if (predictedTaken != taken) {
+                    
+                        if (predictedTaken != taken || targetMismatch) {
                             flushPipeline(node->isBranch ? "Branch misprediction" : "Jump misprediction");
                             newPipeline[Stage::FETCH] = nullptr;
                             newPipeline[Stage::DECODE] = nullptr;
                             stats.controlHazards++;
                             stats.controlHazardStalls++;
-                            logs[200] = (node->isBranch ? "Branch" : "Jump") + std::string(" misprediction at PC=") + std::to_string(node->PC) + " (" + parseInstructions(node->instruction) + "), actual: " + (taken || node->isJump ? "taken to " + std::to_string(PC) : "not taken");
+                            
+                            std::string misType = predictedTaken != taken ? "direction" : "target address";
+                            std::string predictionDetails = predictedTaken ? "taken to " + std::to_string(branchPredictor.getTarget(node->PC)) : "not taken";
+                            
+                            logs[200] = (node->isBranch ? "Branch" : "Jump") + std::string(" misprediction (" + misType + ") at PC=") + std::to_string(node->PC) + " (" + parseInstructions(node->instruction) + "), predicted: " + predictionDetails + ", actual: " + (taken ? "taken to " + std::to_string(PC) : "not taken");
+                        } else {
+                            PC = oldPC;
+                            logs[200] = (node->isBranch ? "Branch" : "Jump") + std::string(" correctly predicted at PC=") + std::to_string(node->PC) + ", restored PC=" + std::to_string(PC);
                         }
                     }
                     

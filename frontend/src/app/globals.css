@@ -13,10 +13,6 @@ body {
 }
 
 *{
-  overflow-x: clip;
-}
-
-*{
   scrollbar-width: thin;
   scrollbar-color: #d1d5db #f9fafb;
   user-select: none;

@@ -17,7 +17,7 @@ import { toast } from "sonner";
 
 const ITEMS_PER_PAGE = 10;
 
-export enum Stage {
+enum Stage {
   FETCH = 0,
   DECODE = 1,
   EXECUTE = 2,
@@ -25,7 +25,7 @@ export enum Stage {
   WRITEBACK = 4
 }
 
-export class InstructionRegisters {
+class InstructionRegisters {
   RA: number;
   RB: number;
   RM: number;
@@ -41,7 +41,23 @@ export class InstructionRegisters {
   }
 }
 
-export interface UIResponse {
+interface SimulationStats {
+  totalCycles: number;
+  stallBubbles: number;
+  pipelineFlushes: number;
+  dataHazards: number;
+  controlHazards: number;
+  dataHazardStalls: number;
+  controlHazardStalls: number;
+  aluInstructions: number;
+  dataTransferInstructions: number;
+  controlInstructions: number;
+  cyclesPerInstruction: number;
+  instructionsExecuted: number;
+  branchPredictionAccuracy: number;
+}
+
+interface UIResponse {
   isFlushed: boolean;
   isStalled: boolean;
   isDataForwarded: boolean;
@@ -103,6 +119,20 @@ const REGISTER_ABI_NAMES = [
   "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11",
   "t3", "t4", "t5", "t6",
 ]
+
+const StatsTable = memo(({ stats }: { stats: Record<string, number> }) => (
+  <table className="w-full text-sm">
+    <tbody>
+      {Object.entries(stats).map(([key, value], index) => (
+        <tr key={index} className={index % 2 === 0 ? "bg-gray-50" : "bg-white"}>
+          <td className="py-2 px-4 font-medium">{key}</td>
+          <td className="py-2 px-4 pr-6 font-mono text-right">{value}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+));
+StatsTable.displayName = "StatsTable";
 
 const MemoryTable = memo(({ entries }: { entries: MemoryCell[] }) => (
   <table className="w-full text-sm">
@@ -263,6 +293,8 @@ export default function Simulator({
   const [textMap, setTextMap] = useState<Record<string, { first: number, second: string }>>({});
   const [terminal, setTerminal] = useState<Record<string, string>>({});
   const [running, setRunning] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<string>("registers");
+  
   const [activeStates, setActiveStates] = useState<Record<number, { active: boolean, instruction: number }>>({
     [Stage.FETCH]: { active: false, instruction: 0 },
     [Stage.DECODE]: { active: false, instruction: 0 },
@@ -288,6 +320,21 @@ export default function Simulator({
     isStalled: false,
     isDataForwarded: false,
     isProgramTerminated: false
+  });
+  const [stats, setStats] = useState<SimulationStats>({
+    totalCycles: 0,
+    stallBubbles: 0,
+    pipelineFlushes: 0,
+    dataHazards: 0,
+    controlHazards: 0,
+    dataHazardStalls: 0,
+    controlHazardStalls: 0,
+    aluInstructions: 0,
+    dataTransferInstructions: 0,
+    controlInstructions: 0,
+    cyclesPerInstruction: 0,
+    instructionsExecuted: 0,
+    branchPredictionAccuracy: 0
   });
 
   const showTerminalErrorDialog = useCallback((errorMessage: string) => {
@@ -318,6 +365,8 @@ export default function Simulator({
     setRunning(simulatorInstance.isRunning());
     setPipelineRegisters(simulatorInstance.getInstructionRegisters());
     setInstruction(simulatorInstance.getPC());
+    setStats(simulatorInstance.getStats());
+    
     if (newTerminal["404"]) {
       setTimeout(() => showTerminalErrorDialog(newTerminal["404"]), 0);
     }
@@ -675,10 +724,15 @@ export default function Simulator({
               </div>
 
               <div className="flex-1 flex flex-col overflow-hidden">
-                <Tabs defaultValue="registers" className="flex-1 flex flex-col">
-                  <TabsList className="grid w-full grid-cols-2 min-h-[8%] h-full">
+                <Tabs 
+                  defaultValue="registers" 
+                  className="flex-1 flex flex-col" 
+                  onValueChange={(value) => setActiveTab(value)}
+                >
+                  <TabsList className="grid w-full grid-cols-3 h-[8%]">
                     <TabsTrigger value="registers">Registers</TabsTrigger>
                     <TabsTrigger value="memory">Memory</TabsTrigger>
+                    <TabsTrigger value="stats">Stats</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="registers" className="flex-1 flex flex-col data-[state=inactive]:hidden">
@@ -765,11 +819,36 @@ export default function Simulator({
                       <MemoryTable entries={memoryEntries} />
                     </div>
                   </TabsContent>
+
+                  <TabsContent value="stats" className="flex-1 flex flex-col data-[state=inactive]:hidden">
+                    <div className="bg-gray-100 py-2 px-3 flex justify-between items-center border-b min-h-[8%]">
+                      <div className="text-sm text-gray-500">Simulation Statistics</div>
+                    </div>
+                    <div className="overflow-y-auto flex-1">
+                      <StatsTable stats={{
+                        "Total Cycles": stats.totalCycles,
+                        "Instructions Executed": stats.instructionsExecuted,
+                        "CPI (Cycles Per Instruction)": Number(Number(stats.cyclesPerInstruction).toFixed(2)),
+                        "Data-Transfer Instructions": stats.dataTransferInstructions,
+                        "ALU Instructions": stats.aluInstructions,
+                        "Control Instructions": stats.controlInstructions,
+                        "Stalls/Bubbles": stats.stallBubbles,
+                        "Data Hazards": stats.dataHazards,
+                        "Control Hazards": stats.controlHazards,
+                        "Pipeline flushes": stats.pipelineFlushes,
+                        "Stalls due to Data Hazards": stats.dataHazardStalls,
+                        "Stalls due to Control Hazards": stats.controlHazardStalls,
+                        "Branch Prediction Accuracy": Number(Number(stats.branchPredictionAccuracy).toFixed(2))
+                      }} />
+                    </div>
+                  </TabsContent>
                 </Tabs>
 
-                <div className="bg-gray-50 py-2 px-3 border-t mt-auto min-h-[15%]">
-                  <PipelineStages activeStates={activeStates} running={running} />
-                </div>
+                {activeTab !== "stats" && (
+                  <div className="bg-gray-50 py-2 px-3 border-t mt-auto min-h-[15%]">
+                    <PipelineStages activeStates={activeStates} running={running} />
+                  </div>
+                )}
               </div>
             </div>
           </div>

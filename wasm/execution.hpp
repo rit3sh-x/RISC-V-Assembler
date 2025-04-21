@@ -359,7 +359,7 @@ inline void executeInstruction(InstructionNode* node, InstructionRegisters& inst
             result = instructionRegisters.RA + instructionRegisters.RB;
             instructionRegisters.RY = result;
             break;
-        case Instructions::BEQ:
+            case Instructions::BEQ:
             {
                 bool branchTaken = (instructionRegisters.RA == instructionRegisters.RM);
                 PC = branchTaken ? (node->PC + instructionRegisters.RB) : PC;

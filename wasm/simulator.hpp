@@ -66,6 +66,7 @@ public:
     InstructionRegisters getInstructionRegisters() const;
     std::unordered_map<int, std::string> getLogs();
     UIResponse getUIResponse() const;
+    SimulationStats Stats();
 };
 
 Simulator::Simulator() : PC(TEXT_SEGMENT_START),
@@ -343,6 +344,8 @@ void Simulator::advancePipeline() {
         newPipeline[pair.first] = nullptr;
     }
 
+    logs[100] = "";
+
     const std::unordered_map<uint32_t, RegisterDependency> depsSnapshot = registerDependencies;
 
     forwardingStatus = ForwardingStatus();
@@ -379,7 +382,6 @@ void Simulator::advancePipeline() {
                 continue;
             }
         }
-        
         switch (node->stage) {
             case Stage::FETCH:
                 {
@@ -571,25 +573,6 @@ bool Simulator::step() {
         if (!running) {
             uiResponse.isProgramTerminated = true;
             logs[200] = "Program execution completed";
-            if (isPipeline) {
-                logs[200] += "\nStats: CPI=" + std::to_string(stats.cyclesPerInstruction) +
-                             ", Instructions=" + std::to_string(stats.instructionsExecuted) +
-                             ", Cycles=" + std::to_string(stats.totalCycles) +
-                             ", Stalls=" + std::to_string(stats.stallBubbles) +
-                             ", DataHazards=" + std::to_string(stats.dataHazards) +
-                             ", ControlHazards=" + std::to_string(stats.controlHazards) +
-                             ", DataHazardStalls=" + std::to_string(stats.dataHazardStalls) +
-                             ", ControlHazardStalls=" + std::to_string(stats.controlHazardStalls) +
-                             ", PipelineFlushes=" + std::to_string(stats.pipelineFlushes) +
-                             ", DataTransferInstructions=" + std::to_string(stats.dataTransferInstructions) +
-                             ", ALUInstructions=" + std::to_string(stats.aluInstructions) +
-                             ", ControlInstructions=" + std::to_string(stats.controlInstructions) +
-                             ", Branch Prediction Accuracy=" + [&]() {
-                                std::ostringstream oss;
-                                oss << std::fixed << std::setprecision(2) << branchPredictor.getAccuracy() << "%";
-                                return oss.str();
-                            }();
-            }
             uiResponse.isProgramTerminated = true;
             return false;
         }
@@ -701,6 +684,11 @@ UIResponse Simulator::getUIResponse() const {
 
 InstructionRegisters Simulator::getInstructionRegisters() const {
     return instructionRegisters;
+}
+
+SimulationStats Simulator::Stats() {
+    stats.branchPredictionAccuracy = branchPredictor.getAccuracy();
+    return stats;
 }
 
 #endif

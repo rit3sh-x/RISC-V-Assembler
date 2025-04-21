@@ -14,21 +14,30 @@ declare namespace createSimulator {
     RY: number;
     RZ: number;
   
-    constructor(RA = 0, RB = 0, RM = 0, RY = 0, RZ = 0) {
-      this.RA = RA;
-      this.RB = RB;
-      this.RM = RM;
-      this.RY = RY;
-      this.RZ = RZ;
-    }
+    constructor(RA?: number, RB?: number, RM?: number, RY?: number, RZ?: number);
   }
-
 
   export interface UIResponse {
     isFlushed: boolean;
     isStalled: boolean;
     isDataForwarded: boolean;
     isProgramTerminated: boolean;
+  }
+
+  export interface SimulationStats {
+    totalCycles: number;
+    stallBubbles: number;
+    pipelineFlushes: number;
+    dataHazards: number;
+    controlHazards: number;
+    dataHazardStalls: number;
+    controlHazardStalls: number;
+    aluInstructions: number;
+    dataTransferInstructions: number;
+    controlInstructions: number;
+    cyclesPerInstruction: number;
+    instructionsExecuted: number;
+    branchPredictionAccuracy: number;
   }
 
   export interface Simulator {
@@ -45,9 +54,10 @@ declare namespace createSimulator {
     isRunning(): boolean;
     getActiveStages(): Record<number, { active: boolean, instruction: number }>;
     getStalls(): number;
-    setEnvironment(pipeline: boolean, dataForwarding: boolean, followedInstruction?: number): void;
+    setEnvironment(pipeline: boolean, dataForwarding: boolean): void;
     getInstructionRegisters(): InstructionRegisters;
     getUIResponse(): UIResponse;
+    getStats(): SimulationStats;
   }
 
   export interface SimulatorModuleInstance {
@@ -57,6 +67,7 @@ declare namespace createSimulator {
     Stage: typeof Stage;
     InstructionRegisters: typeof InstructionRegisters;
     UIResponse: typeof UIResponse;
+    SimulationStats: typeof SimulationStats;
   }
 }
 

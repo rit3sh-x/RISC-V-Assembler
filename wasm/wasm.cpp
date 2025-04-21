@@ -15,26 +15,13 @@ val mapToVal(const std::map<uint32_t, std::pair<uint32_t, std::string>>& m) {
     return result;
 }
 
-val mapStageToVal(const std::map<Stage, bool>& m) {
+val activeStageToVal(const std::map<Stage, std::pair<bool, uint32_t>>& m) {
     val result = val::object();
-    for (const auto& [key, value] : m) {
-        std::string stageName;
-        switch (key) {
-            case Stage::FETCH: stageName = "FETCH"; break;
-            case Stage::DECODE: stageName = "DECODE"; break;
-            case Stage::EXECUTE: stageName = "EXECUTE"; break;
-            case Stage::MEMORY: stageName = "MEMORY"; break;
-            case Stage::WRITEBACK: stageName = "WRITEBACK"; break;
-        }
-        result.set(stageName, value);
-    }
-    return result;
-}
-
-val mapIntToStringVal(const std::map<int, std::string>& m) {
-    val result = val::object();
-    for (const auto& [key, value] : m) {
-        result.set(std::to_string(key), value);
+    for (const auto& [stage, data] : m) {
+        val stageData = val::object();
+        stageData.set("active", data.first);
+        stageData.set("instruction", data.second);
+        result.set(static_cast<int>(stage), stageData);
     }
     return result;
 }
@@ -74,48 +61,48 @@ val uiResponseToVal(const UIResponse& response) {
     return result;
 }
 
+val simulationStatsToVal(const SimulationStats& stats) {
+    val result = val::object();
+    result.set("totalCycles", stats.totalCycles);
+    result.set("stallBubbles", stats.stallBubbles);
+    result.set("pipelineFlushes", stats.pipelineFlushes);
+    result.set("dataHazards", stats.dataHazards);
+    result.set("controlHazards", stats.controlHazards);
+    result.set("dataHazardStalls", stats.dataHazardStalls);
+    result.set("controlHazardStalls", stats.controlHazardStalls);
+    result.set("aluInstructions", stats.aluInstructions);
+    result.set("dataTransferInstructions", stats.dataTransferInstructions);
+    result.set("controlInstructions", stats.controlInstructions);
+    result.set("cyclesPerInstruction", stats.cyclesPerInstruction);
+    result.set("instructionsExecuted", stats.instructionsExecuted);
+    result.set("branchPredictionAccuracy", stats.branchPredictionAccuracy);
+    return result;
+}
+
 class SimulatorWrapper {
 public:
     SimulatorWrapper() : sim() {}
     
     bool loadProgram(const std::string& input) { 
-        try {
-            return sim.loadProgram(input);
-        } catch (const std::exception& e) {
-            logs[404] = "Error loading program: " + std::string(e.what());
-            return false;
-        }
+        return sim.loadProgram(input);
     }
     
     bool step() { 
-        try {
-            return sim.step();
-        } catch (const std::exception& e) {
-            logs[404] = "Exception during execution step: " + std::string(e.what());
-            return false;
-        }
+        return sim.step();
     }
     
     void run() { 
-        try {
-            sim.run();
-        } catch (const std::exception& e) {
-            logs[404] = "Exception during full program execution: " + std::string(e.what());
-        }
+        sim.run();
     }
 
     void reset() {
-        try {
-            sim.reset();
-        } catch (const std::exception& e) {
-            logs[404] = "Exception during simulator reset: " + std::string(e.what());
-        }
+        sim.reset();
     }
 
     val getRegisters() {
         const uint32_t* regs = sim.getRegisters();
         val result = val::array();
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < NUM_REGISTERS; i++) {
             result.set(i, regs[i]);
         }
         return result;
@@ -129,15 +116,7 @@ public:
     bool isRunning() const { return sim.isRunning(); }
     
     val getActiveStages() const { 
-        std::map<Stage, std::pair<bool, uint32_t>> stages = sim.getActiveStages();
-        val result = val::object();
-        for (const auto& [stage, data] : stages) {
-            val stageData = val::object();
-            stageData.set("active", data.first);
-            stageData.set("instruction", data.second);
-            result.set(static_cast<int>(stage), stageData);
-        }
-        return result;
+        return activeStageToVal(sim.getActiveStages());
     }
     
     uint32_t getStalls() const { return sim.getStalls(); }
@@ -153,9 +132,12 @@ public:
         return instructionRegistersToVal(sim.getInstructionRegisters());
     }
 
+    val getStats() {
+        return simulationStatsToVal(sim.Stats());
+    }
+
 private:
     Simulator sim;
-    std::unordered_map<int, std::string> logs;
 };
 
 EMSCRIPTEN_BINDINGS(simulator_module) {
@@ -179,6 +161,21 @@ EMSCRIPTEN_BINDINGS(simulator_module) {
         .field("isDataForwarded", &UIResponse::isDataForwarded)
         .field("isProgramTerminated", &UIResponse::isProgramTerminated);
         
+    value_object<SimulationStats>("SimulationStats")
+        .field("totalCycles", &SimulationStats::totalCycles)
+        .field("stallBubbles", &SimulationStats::stallBubbles)
+        .field("pipelineFlushes", &SimulationStats::pipelineFlushes)
+        .field("dataHazards", &SimulationStats::dataHazards)
+        .field("controlHazards", &SimulationStats::controlHazards)
+        .field("dataHazardStalls", &SimulationStats::dataHazardStalls)
+        .field("controlHazardStalls", &SimulationStats::controlHazardStalls)
+        .field("aluInstructions", &SimulationStats::aluInstructions)
+        .field("dataTransferInstructions", &SimulationStats::dataTransferInstructions)
+        .field("controlInstructions", &SimulationStats::controlInstructions)
+        .field("cyclesPerInstruction", &SimulationStats::cyclesPerInstruction)
+        .field("instructionsExecuted", &SimulationStats::instructionsExecuted)
+        .field("branchPredictionAccuracy", &SimulationStats::branchPredictionAccuracy);
+        
     class_<SimulatorWrapper>("Simulator")
         .constructor<>()
         .function("loadProgram", &SimulatorWrapper::loadProgram)
@@ -196,5 +193,6 @@ EMSCRIPTEN_BINDINGS(simulator_module) {
         .function("getStalls", &SimulatorWrapper::getStalls)
         .function("setEnvironment", &SimulatorWrapper::setEnvironment)
         .function("getInstructionRegisters", &SimulatorWrapper::getInstructionRegisters)
-        .function("getUIResponse", &SimulatorWrapper::getUIResponse);
+        .function("getUIResponse", &SimulatorWrapper::getUIResponse)
+        .function("getStats", &SimulatorWrapper::getStats);
 }

@@ -5,7 +5,7 @@ import Editor from "@/components/Editor";
 import Simulator from "@/components/Simulator";
 import { Sidebar } from "@/components/Sidebar";
 import { Github, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSimulator } from '@/hooks/useSimulator';
 import Script from 'next/script';
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +29,7 @@ export default function Landing() {
   const [activeTab, setActiveTab] = useState<"editor" | "simulator">("editor");
   const [isOpen, setIsOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [pipelineSvg, setPipelineSvg] = useState<string | null>(null);
   
   const [simulationControls, setSimulationControls] = useState<SimulationControls>({
     pipelining: true,
@@ -62,6 +63,24 @@ or x7,x5,x6 # 0110011-110-0000000-00111-00101-00110-NULL`);
   const handleRunningChange = (running: boolean) => {
     setIsRunning(running);
   }
+
+  useEffect(() => {
+    const fetchSvg = async () => {
+      try {
+        const response = await fetch('/pipeline.svg');
+        if (response.ok) {
+          const svgText = await response.text();
+          setPipelineSvg(svgText);
+        } else {
+          console.error('Failed to load pipeline SVG');
+        }
+      } catch (error) {
+        console.error('Error loading pipeline SVG:', error);
+      }
+    };
+    
+    fetchSvg();
+  }, []);
 
   const scriptElement = (
     <Script
@@ -185,7 +204,7 @@ or x7,x5,x6 # 0110011-110-0000000-00111-00101-00110-NULL`);
       
       <div className="w-[97%] h-full">
         {activeTab === "editor" ? (
-          <Editor text={code} setText={setCode} setActiveTab={setActiveTab} />
+          <Editor text={code} setText={setCode}/>
         ) : (
           <Simulator
             text={code}
@@ -193,6 +212,7 @@ or x7,x5,x6 # 0110011-110-0000000-00111-00101-00110-NULL`);
             controls={simulationControls}
             onSidebarOpenChange={handleSidebarOpenChange}
             onRunningChange={handleRunningChange}
+            pipelineSvg={pipelineSvg}
           />
         )}
       </div>

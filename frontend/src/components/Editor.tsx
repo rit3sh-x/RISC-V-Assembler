@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import MonacoEditor from '@monaco-editor/react';
 import { editor } from 'monaco-editor';
 import { FileUp } from 'lucide-react';
@@ -8,21 +8,37 @@ import { FileUp } from 'lucide-react';
 interface EditorProps {
   text: string;
   setText: (text: string) => void;
-  setActiveTab: (tab: "editor" | "simulator") => void;
 }
 
-const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
+const Editor = ({ text, setText }: EditorProps) => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const [isEditorReady, setIsEditorReady] = useState(false);
 
   useEffect(() => {
     const savedCode = localStorage.getItem('riscvMachineCode');
     if (savedCode) {
       setText(savedCode);
     }
-  }, [setText, setActiveTab]);
+  }, [setText]);
+
+  useEffect(() => {
+    if (editorRef.current && isEditorReady) {
+      const resizeEditor = () => {
+        if (editorRef.current) {
+          editorRef.current.layout();
+        }
+      };
+      resizeEditor();
+      window.addEventListener('resize', resizeEditor);
+      return () => {
+        window.removeEventListener('resize', resizeEditor);
+      };
+    }
+  }, [isEditorReady]);
 
   const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
     editorRef.current = editor;
+
     monaco.languages.register({ id: 'riscv-assembly' });
     monaco.languages.setMonarchTokensProvider('riscv-assembly', {
       tokenizer: {
@@ -33,7 +49,9 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
           [/\b0b[01]+\b/, 'number.binary'],
           [/\b-?\d+\b/, 'number'],
           [/^[a-zA-Z_]\w*:/, 'type.identifier'],
-          [/\.(text|data|byte|half|word|dword|asciz|acsciiz)\b/, 'directive'],
+          [/\b(jal|beq|bne|blt|bge|bltu|bgeu)\s+(?:[^,]+,\s*)?([a-zA-Z_]\w*)/, ['keyword', 'type.identifier']],
+          [/,\s*([a-zA-Z_]\w*)(?=\s|$)/, 'type.identifier'],
+          [/\.(text|data|byte|half|word|dword|asciz|asciiz)\b/, 'directive'],
           [/#.*$/, 'comment'],
           [/"([^"\\]|\\.)*$/, 'string.invalid'],
           [/"/, { token: 'string.quote', bracket: '@open', next: '@string' }],
@@ -68,7 +86,10 @@ const Editor = ({ text, setText, setActiveTab }: EditorProps) => {
         'editorCursor.foreground': '#0000FF',
       },
     });
-    
+  
+    monaco.editor.setModelLanguage(editor.getModel()!, 'riscv-assembly');
+    monaco.editor.setTheme('riscv-theme');
+    setIsEditorReady(true);
     editor.focus();
   };
 

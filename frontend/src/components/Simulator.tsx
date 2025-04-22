@@ -78,6 +78,7 @@ interface SimulatorProps {
   controls: SimulationControls;
   onSidebarOpenChange: (open: boolean) => void;
   onRunningChange: (running: boolean) => void;
+  pipelineSvg: string | null;
 }
 
 const StageNames = {
@@ -293,7 +294,8 @@ export default function Simulator({
   simulatorInstance,
   controls,
   onSidebarOpenChange,
-  onRunningChange
+  onRunningChange,
+  pipelineSvg
 }: SimulatorProps) {
   const [registers, setRegisters] = useState<number[]>(Array.from({ length: 32 }, () => 0));
   const [cycles, setCycles] = useState<number>(0);
@@ -896,8 +898,7 @@ export default function Simulator({
                 {consoleActiveTab === "console" ? (
                   renderTerminalOutput()
                 ) : (
-                  <div className="h-full flex items-center justify-center text-gray-500">
-                    <div className="w-[80%] h-[95%] flex items-center justify-center">
+                  <div className="h-full w-full flex items-center justify-center text-gray-500">
                       <PipelineDiagram
                         fetchStart={activeStates[Stage.FETCH].active}
                         decodeStart={activeStates[Stage.DECODE].active}
@@ -911,8 +912,8 @@ export default function Simulator({
                         arrowData={pipelineDiag.ExExForwarding || pipelineDiag.MemExForwarding}
                         arrowBranch={pipelineDiag.ExToBranch}
                         arrowFetch={pipelineDiag.BranchToFetch}
+                        svgData={pipelineSvg}
                       />
-                    </div>
                   </div>
                 )}
               </div>

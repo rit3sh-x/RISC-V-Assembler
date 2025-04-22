@@ -43,14 +43,14 @@ const Editor = ({ text, setText }: EditorProps) => {
     monaco.languages.setMonarchTokensProvider('riscv-assembly', {
       tokenizer: {
         root: [
-          [/^\s*(add|sub|mul|div|rem|and|or|xor|sll|slt|sra|srl|addi|andi|ori|lb|ld|lh|lw|jalr|sb|sw|sd|sh|beq|bne|bge|blt|auipc|lui|jal)\b/, 'keyword'],
-          [/\b(x(?:[0-9]|[12]\d|3[01])|zero|ra|sp|gp|tp|t[0-6]|s[0-1]|a[0-7]|s[2-9]|s1[0-1]|fp)\b/, 'variable'],
+          [/\b(add|sub|mul|div|rem|and|or|xor|sll|slt|sra|srl|addi|andi|ori|lb|ld|lh|lw|jalr|sb|sw|sd|sh|beq|bne|bge|blt|auipc|lui|jal)\b/, 'keyword'],
+          [/\b(x[0-9]|x[1-2][0-9]|x3[0-1]|zero|ra|sp|gp|tp|t[0-6]|s[0-1]|a[0-7]|s[2-9]|s1[0-1]|fp)\b/, 'variable'],
           [/\b0x[0-9a-fA-F]+\b/, 'number.hex'],
           [/\b0b[01]+\b/, 'number.binary'],
           [/\b-?\d+\b/, 'number'],
           [/^[a-zA-Z_]\w*:/, 'type.identifier'],
-          [/\b(jal|beq|bne|blt|bge|bltu|bgeu)\s+(?:[^,]+,\s*)?([a-zA-Z_]\w*)/, ['keyword', 'type.identifier']],
-          [/,\s*([a-zA-Z_]\w*)(?=\s|$)/, 'type.identifier'],
+          [/\b(jal|beq|bne|blt|bge|bltu|bgeu)\s+([a-zA-Z_]\w*)/, ['keyword', 'type.identifier']],
+          [/\b(jal|beq|bne|blt|bge|bltu|bgeu)\s+\w+\s*,\s*\w+\s*,\s*([a-zA-Z_]\w*)/, ['keyword', { token: '', next: '@pop' }, 'type.identifier']],
           [/\.(text|data|byte|half|word|dword|asciz|asciiz)\b/, 'directive'],
           [/#.*$/, 'comment'],
           [/"([^"\\]|\\.)*$/, 'string.invalid'],

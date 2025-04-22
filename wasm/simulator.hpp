@@ -207,6 +207,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                         instructionRegisters.RB = dep.value;
                         forwardingStatus.rbForwarded = true;
                         uiResponse.isDataForwarded = true;
+                        pipelineDiagramInfo.ExExForwarding = true;
                         if (logs.find(300) != logs.end()) {
                             logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ") from instruction (" + textMap[dep.pc].second + ")";
                         } else {
@@ -247,6 +248,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                     instructionRegisters.RB = dep.value;
                     forwardingStatus.rbForwarded = true;
                     uiResponse.isDataForwarded = true;
+                    pipelineDiagramInfo.ExExForwarding = true;
                     if (logs.find(300) != logs.end()) {
                         logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
                     } else {

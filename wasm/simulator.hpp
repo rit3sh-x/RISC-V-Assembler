@@ -28,6 +28,7 @@ private:
     InstructionRegisters instructionRegisters;
     ForwardingStatus forwardingStatus;
     UIResponse uiResponse;
+    PipelineDiagramInfo pipelineDiagramInfo;
 
     bool running;
     bool isPipeline;
@@ -67,12 +68,14 @@ public:
     std::unordered_map<int, std::string> getLogs();
     UIResponse getUIResponse() const;
     SimulationStats Stats();
+    PipelineDiagramInfo getPipelineDiagramInfo() const;
 };
 
 Simulator::Simulator() : PC(TEXT_SEGMENT_START),
                          instructionRegisters(InstructionRegisters()),
                          forwardingStatus(ForwardingStatus()),
                          uiResponse(UIResponse()),
+                         pipelineDiagramInfo(PipelineDiagramInfo()),
                          running(false),
                          isPipeline(true),
                          isDataForwarding(true),
@@ -164,6 +167,7 @@ void Simulator::reset() {
     stats = SimulationStats();
     forwardingStatus = ForwardingStatus();
     uiResponse = UIResponse();
+    pipelineDiagramInfo = PipelineDiagramInfo();
     branchPredictor.reset();
     instructionCount = 0;
     nextInstructionId = 0;
@@ -181,6 +185,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                     instructionRegisters.RA = dep.value;
                     forwardingStatus.raForwarded = true;
                     uiResponse.isDataForwarded = true;
+                    pipelineDiagramInfo.ExExForwarding = true;
                     if (logs.find(300) != logs.end()) {
                         logs[300] += "\nData Forwarding: EX->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ") from instruction (" + textMap[dep.pc].second + ")";
                     } else {
@@ -192,6 +197,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                         instructionRegisters.RM = dep.value;
                         forwardingStatus.rmForwarded = true;
                         uiResponse.isDataForwarded = true;
+                        pipelineDiagramInfo.ExExForwarding = true;
                         if (logs.find(300) != logs.end()) {
                             logs[300] += "\nData Forwarding: EX->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ") from instruction (" + textMap[dep.pc].second + ")";
                         } else {
@@ -218,6 +224,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                 instructionRegisters.RA = dep.value;
                 forwardingStatus.raForwarded = true;
                 uiResponse.isDataForwarded = true;
+                pipelineDiagramInfo.MemExForwarding = true;
                 if (logs.find(300) != logs.end()) {
                     logs[300] += "\nData Forwarding: MEM->EX for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
                 } else {
@@ -230,6 +237,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                     instructionRegisters.RM = dep.value;
                     forwardingStatus.rmForwarded = true;
                     uiResponse.isDataForwarded = true;
+                    pipelineDiagramInfo.MemExForwarding = true;
                     if (logs.find(300) != logs.end()) {
                         logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") to RM of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
                     } else {
@@ -339,12 +347,11 @@ void Simulator::advancePipeline() {
     bool loadUseHazard = false;
 
     uiResponse = UIResponse();
+    pipelineDiagramInfo = PipelineDiagramInfo();
 
     for (auto& pair : pipeline) {
         newPipeline[pair.first] = nullptr;
     }
-
-    logs[100] = "";
 
     const std::unordered_map<uint32_t, RegisterDependency> depsSnapshot = registerDependencies;
 
@@ -400,6 +407,7 @@ void Simulator::advancePipeline() {
                             logs[200] = "Instruction predicted " + std::string(predictedTaken ? "taken" : "not taken") + " at PC=" + std::to_string(node->PC) + " (" + parseInstructions(node->instruction) + ")";
                             if (predictedTaken && branchPredictor.isInBTB(node->PC)) {
                                 PC = branchPredictor.getTarget(node->PC);
+                                pipelineDiagramInfo.BranchToFetch = true;
                             }
                         }
                         node->stage = Stage::DECODE;
@@ -481,6 +489,7 @@ void Simulator::advancePipeline() {
                         }
                     
                         branchPredictor.update(node->PC, taken, PC);
+                        pipelineDiagramInfo.ExToBranch = true;
                     
                         if (predictedTaken != taken || targetMismatch) {
                             flushPipeline(node->isBranch ? "Branch misprediction" : "Jump misprediction");
@@ -689,6 +698,10 @@ InstructionRegisters Simulator::getInstructionRegisters() const {
 SimulationStats Simulator::Stats() {
     stats.branchPredictionAccuracy = branchPredictor.getAccuracy();
     return stats;
+}
+
+PipelineDiagramInfo Simulator::getPipelineDiagramInfo() const {
+    return pipelineDiagramInfo;
 }
 
 #endif

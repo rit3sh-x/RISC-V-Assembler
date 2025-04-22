@@ -30,6 +30,15 @@ namespace riscv {
         UIResponse() : isFlushed(false), isStalled(false), isDataForwarded(false), isProgramTerminated(false) {}
     };
 
+    struct PipelineDiagramInfo {
+        bool ExExForwarding;
+        bool MemExForwarding;
+        bool BranchToFetch;
+        bool ExToBranch;
+
+        PipelineDiagramInfo() : ExExForwarding(false), MemExForwarding(false), BranchToFetch(false), ExToBranch(false) {}
+    };
+
     inline const std::vector<Stage> reverseStageOrder = { Stage::WRITEBACK, Stage::MEMORY, Stage::EXECUTE, Stage::DECODE, Stage::FETCH };
 
     inline const std::vector<Stage> forwardStageOrder = { Stage::FETCH, Stage::DECODE, Stage::EXECUTE, Stage::MEMORY, Stage::WRITEBACK };

@@ -79,6 +79,15 @@ val simulationStatsToVal(const SimulationStats& stats) {
     return result;
 }
 
+val pipelineDiagramInfoToVal(const PipelineDiagramInfo& info) {
+    val result = val::object();
+    result.set("ExExForwarding", info.ExExForwarding);
+    result.set("MemExForwarding", info.MemExForwarding);
+    result.set("BranchToFetch", info.BranchToFetch);
+    result.set("ExToBranch", info.ExToBranch);
+    return result;
+}
+
 class SimulatorWrapper {
 public:
     SimulatorWrapper() : sim() {}
@@ -136,6 +145,10 @@ public:
         return simulationStatsToVal(sim.Stats());
     }
 
+    val getPipelineDiagramInfo() const {
+        return pipelineDiagramInfoToVal(sim.getPipelineDiagramInfo());
+    }
+
 private:
     Simulator sim;
 };
@@ -175,6 +188,12 @@ EMSCRIPTEN_BINDINGS(simulator_module) {
         .field("cyclesPerInstruction", &SimulationStats::cyclesPerInstruction)
         .field("instructionsExecuted", &SimulationStats::instructionsExecuted)
         .field("branchPredictionAccuracy", &SimulationStats::branchPredictionAccuracy);
+
+    value_object<PipelineDiagramInfo>("PipelineDiagramInfo")
+        .field("ExExForwarding", &PipelineDiagramInfo::ExExForwarding)
+        .field("MemExForwarding", &PipelineDiagramInfo::MemExForwarding)
+        .field("BranchToFetch", &PipelineDiagramInfo::BranchToFetch)
+        .field("ExToBranch", &PipelineDiagramInfo::ExToBranch);
         
     class_<SimulatorWrapper>("Simulator")
         .constructor<>()
@@ -194,5 +213,6 @@ EMSCRIPTEN_BINDINGS(simulator_module) {
         .function("setEnvironment", &SimulatorWrapper::setEnvironment)
         .function("getInstructionRegisters", &SimulatorWrapper::getInstructionRegisters)
         .function("getUIResponse", &SimulatorWrapper::getUIResponse)
-        .function("getStats", &SimulatorWrapper::getStats);
+        .function("getStats", &SimulatorWrapper::getStats)
+        .function("getPipelineDiagramInfo", &SimulatorWrapper::getPipelineDiagramInfo);
 }

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import type { SimulationControls } from "@/components/Landing";
 import { toast } from "sonner";
+import { PipelineDiagram } from "@/components/Pipeline";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -23,6 +24,13 @@ enum Stage {
   EXECUTE = 2,
   MEMORY = 3,
   WRITEBACK = 4
+}
+
+interface PipelineDiagramInfo {
+  ExExForwarding: boolean;
+  MemExForwarding: boolean;
+  BranchToFetch: boolean;
+  ExToBranch: boolean;
 }
 
 class InstructionRegisters {
@@ -294,6 +302,7 @@ export default function Simulator({
   const [terminal, setTerminal] = useState<Record<string, string>>({});
   const [running, setRunning] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>("registers");
+  const [consoleActiveTab, setConsoleActiveTab] = useState<string>("pipeline");
   
   const [activeStates, setActiveStates] = useState<Record<number, { active: boolean, instruction: number }>>({
     [Stage.FETCH]: { active: false, instruction: 0 },
@@ -336,6 +345,12 @@ export default function Simulator({
     instructionsExecuted: 0,
     branchPredictionAccuracy: 0
   });
+  const [pipelineDiag, setPipelineDiag] = useState<PipelineDiagramInfo>({
+    ExExForwarding: false,
+    MemExForwarding: false,
+    BranchToFetch: false,
+    ExToBranch: false
+  });
 
   const showTerminalErrorDialog = useCallback((errorMessage: string) => {
     setDialogMessage({
@@ -366,6 +381,7 @@ export default function Simulator({
     setPipelineRegisters(simulatorInstance.getInstructionRegisters());
     setInstruction(simulatorInstance.getPC());
     setStats(simulatorInstance.getStats());
+    setPipelineDiag(simulatorInstance.getPipelineDiagramInfo());
     
     if (newTerminal["404"]) {
       setTimeout(() => showTerminalErrorDialog(newTerminal["404"]), 0);
@@ -720,7 +736,7 @@ export default function Simulator({
 
             <div className="border rounded-lg overflow-hidden bg-white shadow-sm h-full flex flex-col">
               <div className="bg-gray-100 py-2 px-3 border-b min-h-[8%]">
-                <h2 className="text-lg font-semibold">System Board</h2>
+                <h2 className="text-lg font-semibold text-right">System Board</h2>
               </div>
 
               <div className="flex-1 flex flex-col overflow-hidden">
@@ -856,10 +872,49 @@ export default function Simulator({
           <div className="row-span-2 grid grid-cols-1 md:grid-cols-2 gap-[2%]">
             <div className="border rounded-lg overflow-hidden bg-white shadow-sm h-full flex flex-col">
               <div className="bg-gray-100 py-2 px-3 border-b min-h-[15%]">
-                <h2 className="text-lg font-semibold">Console Output</h2>
+                <div className="flex justify-between items-center">
+                  <h2 className="text-lg font-semibold">Output</h2>
+                  <div className="flex gap-1">
+                    <Button 
+                      variant={consoleActiveTab === "pipeline" ? "default" : "outline"} 
+                      size="sm"
+                      onClick={() => setConsoleActiveTab("pipeline")}
+                    >
+                      Pipeline
+                    </Button>
+                    <Button 
+                      variant={consoleActiveTab === "console" ? "default" : "outline"} 
+                      size="sm"
+                      onClick={() => setConsoleActiveTab("console")}
+                    >
+                      Console
+                    </Button>
+                  </div>
+                </div>
               </div>
               <div className="flex-1 p-3 font-mono text-sm bg-gray-50 overflow-y-auto">
-                {renderTerminalOutput()}
+                {consoleActiveTab === "console" ? (
+                  renderTerminalOutput()
+                ) : (
+                  <div className="h-full flex items-center justify-center text-gray-500">
+                    <div className="w-[80%] h-[95%] flex items-center justify-center">
+                      <PipelineDiagram
+                        fetchStart={activeStates[Stage.FETCH].active}
+                        decodeStart={activeStates[Stage.DECODE].active}
+                        executeStart={activeStates[Stage.EXECUTE].active}
+                        memoryStart={activeStates[Stage.MEMORY].active}
+                        writebackStart={activeStates[Stage.WRITEBACK].active}
+                        exEx={pipelineDiag.ExExForwarding}
+                        memEx={pipelineDiag.MemExForwarding}
+                        branchFetch={pipelineDiag.BranchToFetch}
+                        branchExecute={pipelineDiag.ExToBranch}
+                        arrowData={pipelineDiag.ExExForwarding || pipelineDiag.MemExForwarding}
+                        arrowBranch={pipelineDiag.ExToBranch}
+                        arrowFetch={pipelineDiag.BranchToFetch}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <div className="border rounded-lg overflow-hidden bg-white shadow-sm h-full flex flex-col">

@@ -40,6 +40,13 @@ declare namespace createSimulator {
     branchPredictionAccuracy: number;
   }
 
+  export interface PipelineDiagramInfo {
+    ExExForwarding: boolean;
+    MemExForwarding: boolean;
+    BranchToFetch: boolean;
+    ExToBranch: boolean;
+  }
+
   export interface Simulator {
     loadProgram(input: string): boolean;
     step(): boolean;
@@ -58,6 +65,7 @@ declare namespace createSimulator {
     getInstructionRegisters(): InstructionRegisters;
     getUIResponse(): UIResponse;
     getStats(): SimulationStats;
+    getPipelineDiagramInfo(): PipelineDiagramInfo;
   }
 
   export interface SimulatorModuleInstance {
@@ -68,6 +76,7 @@ declare namespace createSimulator {
     InstructionRegisters: typeof InstructionRegisters;
     UIResponse: typeof UIResponse;
     SimulationStats: typeof SimulationStats;
+    PipelineDiagramInfo: typeof PipelineDiagramInfo;
   }
 }
 

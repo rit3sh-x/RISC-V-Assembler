@@ -183,7 +183,7 @@ or x7,x5,x6 # 0110011-110-0000000-00111-00101-00110-NULL`);
         />
       )}
       
-      <div className="w-[95%] h-[95%]">
+      <div className="w-[97%] h-full">
         {activeTab === "editor" ? (
           <Editor text={code} setText={setCode} setActiveTab={setActiveTab} />
         ) : (

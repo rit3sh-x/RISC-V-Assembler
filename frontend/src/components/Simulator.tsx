@@ -117,7 +117,6 @@ const wordToSignedDecimal = (value: number) => toSignedDecimal(value, 32);
 const MEMORY_SEGMENTS = {
   CODE: "0x00000000",
   DATA: "0x10000000",
-  HEAP: "0x10008000",
   STACK: "0x7FFFFFFC",
   END: "0x80000000",
 }
@@ -551,7 +550,6 @@ export default function Simulator({
     switch (segment) {
       case MEMORY_SEGMENTS.CODE: baseAddress = 0x00000000; break;
       case MEMORY_SEGMENTS.DATA: baseAddress = 0x10000000; break;
-      case MEMORY_SEGMENTS.HEAP: baseAddress = 0x10008000; break;
       case MEMORY_SEGMENTS.STACK: baseAddress = 0x7ffffffc; break;
     }
     setMemoryStartIndex(baseAddress);
@@ -800,9 +798,6 @@ export default function Simulator({
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => jumpToSegment(MEMORY_SEGMENTS.DATA)}>
                           Data
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => jumpToSegment(MEMORY_SEGMENTS.HEAP)}>
-                          Heap
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => jumpToSegment(MEMORY_SEGMENTS.STACK)}>
                           Stack

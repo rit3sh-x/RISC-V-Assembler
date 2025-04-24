@@ -12,7 +12,6 @@
 namespace riscv {
     inline constexpr uint32_t TEXT_SEGMENT_START = 0x00000000;
     inline constexpr uint32_t DATA_SEGMENT_START = 0x10000000;
-    inline constexpr uint32_t HEAP_SEGMENT_START = 0x10008000;
     inline constexpr uint32_t STACK_SEGMENT_START = 0x7FFFFDC;
     inline constexpr uint32_t INSTRUCTION_SIZE = 4;
     inline constexpr uint32_t MEMORY_SIZE = 0x80000000;

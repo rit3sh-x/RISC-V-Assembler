@@ -175,7 +175,8 @@ int main(int argc, char* argv[]) {
                     printUsage();
                     return 1;
                 }
-            } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            }
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             printUsage();
             return 0;
         } else {

@@ -245,6 +245,7 @@ bool Simulator::checkDependencies(const InstructionNode& node, const std::unorde
     }
     
     for (const auto& [uniqueId, dep] : depsSnapshot) {
+        if (dep.stage == Stage::MEMORY) continue;
         if (uniqueId != node.uniqueId) {
             if (node.rs1 != 0 && node.rs1 == dep.reg) {
                 std::cout << YELLOW << "Data Hazard: Instruction at PC=" + std::to_string(node.PC) + " (" + parseInstructions(node.instruction) + ") depends on reg " + std::to_string(dep.reg) + " in " + stageToString(dep.stage) << RESET << std::endl;
@@ -359,7 +360,8 @@ void Simulator::advancePipeline() {
 
             if (shouldStall) {
                 node->stalled = true;
-                newPipeline[node->stage] = new InstructionNode(*node);
+                newPipeline[node->stage] = node;
+                pipeline[stage] = nullptr;
                 instructionProcessed = true;
                 if (node->stage == Stage::DECODE || node->stage == Stage::EXECUTE) {
                     stalled = true;
@@ -377,7 +379,8 @@ void Simulator::advancePipeline() {
                 {
                     if (stalled || loadUseHazard) {
                         node->stalled = true;
-                        newPipeline[Stage::FETCH] = new InstructionNode(*node);
+                        newPipeline[Stage::FETCH] = node;
+                        pipeline[stage] = nullptr;
                         instructionProcessed = true;
                         continue;
                     }
@@ -393,7 +396,8 @@ void Simulator::advancePipeline() {
                         }
 
                         node->stage = Stage::DECODE;
-                        newPipeline[Stage::DECODE] = new InstructionNode(*node);
+                        newPipeline[Stage::DECODE] = node;
+                        pipeline[stage] = nullptr;
                         instructionProcessed = true;
                     }
                 }
@@ -403,7 +407,8 @@ void Simulator::advancePipeline() {
                 {
                     if (stalled || loadUseHazard) {
                         node->stalled = true;
-                        newPipeline[Stage::DECODE] = new InstructionNode(*node);
+                        newPipeline[Stage::DECODE] = node;
+                        pipeline[stage] = nullptr;
                         instructionProcessed = true;
                         stalled = true;
                         continue;
@@ -413,7 +418,8 @@ void Simulator::advancePipeline() {
 
                     if (!isDataForwarding && checkDependencies(*node, depsSnapshot)) {
                         node->stalled = true;
-                        newPipeline[Stage::DECODE] = new InstructionNode(*node);
+                        newPipeline[Stage::DECODE] = node;
+                        pipeline[stage] = nullptr;
                         instructionProcessed = true;
                         stalled = true;
                         stats.dataHazards++;
@@ -441,7 +447,8 @@ void Simulator::advancePipeline() {
                     
                     updateDependencies(*node, Stage::DECODE);
                     node->stage = Stage::EXECUTE;
-                    newPipeline[Stage::EXECUTE] = new InstructionNode(*node);
+                    newPipeline[Stage::EXECUTE] = node;
+                    pipeline[stage] = nullptr;
                     instructionProcessed = true;
                 }
                 break;
@@ -506,7 +513,8 @@ void Simulator::advancePipeline() {
                     }
                     
                     node->stage = Stage::MEMORY;
-                    newPipeline[Stage::MEMORY] = new InstructionNode(*node);
+                    newPipeline[Stage::MEMORY] = node;
+                    pipeline[stage] = nullptr;
                     instructionProcessed = true;
                 }
                 break;
@@ -521,7 +529,8 @@ void Simulator::advancePipeline() {
                     }
 
                     node->stage = Stage::WRITEBACK;
-                    newPipeline[Stage::WRITEBACK] = new InstructionNode(*node);
+                    newPipeline[Stage::WRITEBACK] = node;
+                    pipeline[stage] = nullptr;
                     instructionProcessed = true;
                 }
                 break;
@@ -549,6 +558,7 @@ void Simulator::advancePipeline() {
                         }
                         if (pipelineEmpty) {
                             newPipeline[Stage::FETCH] = new InstructionNode(PC);
+                            newPipeline[Stage::FETCH]->uniqueId = nextInstructionId++;
                         }
                     }
                 }
@@ -565,6 +575,7 @@ void Simulator::advancePipeline() {
     for (auto& pair : pipeline) {
         if (pair.second != nullptr) {
             delete pair.second;
+            pair.second = nullptr;
         }
     }
     pipeline = newPipeline;

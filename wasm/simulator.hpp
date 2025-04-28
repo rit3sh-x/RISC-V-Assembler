@@ -46,7 +46,7 @@ private:
     void applyDataForwarding(InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot);
     bool checkDependencies(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot) const;
     void updateDependencies(InstructionNode& node, Stage stage);
-    bool checkLoadUseHazard(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot);
+    bool checkLoadUseHazard(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot, bool isStore = false);
     bool isPipelineEmpty() const;
 
 public:
@@ -178,6 +178,41 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
 
     forwardingStatus = ForwardingStatus();
 
+    if (node.stage == Stage::MEMORY) {
+        for (const auto& [uniqueId, dep] : depsSnapshot) {
+            if (dep.stage == Stage::MEMORY && dep.reg != 0 && dep.isLoad) {
+                if (node.rs1 != 0 && node.rs1 == dep.reg && !forwardingStatus.raForwarded) {
+                    instructionRegisters.RA = dep.value;
+                    forwardingStatus.raForwarded = true;
+                    uiResponse.isDataForwarded = true;
+                    pipelineDiagramInfo.MemMemForwarding = true;
+                    if (logs.find(300) != logs.end()) {
+                        logs[300] += "\nData Forwarding: MEM->MEM for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
+                    } else {
+                        logs[300] = "Data Forwarding: MEM->MEM for rs1 (reg " + std::to_string(node.rs1) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
+                    }
+                }
+                if (node.rs2 != 0 && node.rs2 == dep.reg && !forwardingStatus.rbForwarded && !forwardingStatus.rmForwarded) {
+                    if (node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) {
+                        instructionRegisters.RM = dep.value;
+                        forwardingStatus.rmForwarded = true;
+                    } else {
+                        instructionRegisters.RB = dep.value;
+                        forwardingStatus.rbForwarded = true;
+                    }
+                    uiResponse.isDataForwarded = true;
+                    pipelineDiagramInfo.MemMemForwarding = true;
+                    if (logs.find(300) != logs.end()) {
+                        logs[300] += "\nData Forwarding: MEM->MEM for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
+                    } else {
+                        logs[300] = "Data Forwarding: MEM->MEM for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     for (const auto& [uniqueId, dep] : depsSnapshot) {
         if (dep.stage == Stage::EXECUTE && dep.reg != 0) {
             if (!dep.isLoad) {
@@ -248,7 +283,7 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
                     instructionRegisters.RB = dep.value;
                     forwardingStatus.rbForwarded = true;
                     uiResponse.isDataForwarded = true;
-                    pipelineDiagramInfo.ExExForwarding = true;
+                    pipelineDiagramInfo.MemExForwarding = true;
                     if (logs.find(300) != logs.end()) {
                         logs[300] += "\nData Forwarding: MEM->EX for rs2 (reg " + std::to_string(node.rs2) + ") of instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ")" + (dep.isLoad ? " [Load]" : "") + " from instruction (" + textMap[dep.pc].second + ")";
                     } else {
@@ -280,7 +315,7 @@ bool Simulator::checkDependencies(const InstructionNode& node, const std::unorde
     return false;
 }
 
-bool Simulator::checkLoadUseHazard(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot) {
+bool Simulator::checkLoadUseHazard(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot, bool isStore) {
     if (!isPipeline) {
         return false;
     }
@@ -290,7 +325,7 @@ bool Simulator::checkLoadUseHazard(const InstructionNode& node, const std::unord
     bool hasRS2 = (node.instructionType == InstructionType::R || node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB);
     
     for (const auto& [uniqueId, dep] : depsSnapshot) {
-        if (uniqueId != node.uniqueId && dep.stage == Stage::EXECUTE && dep.isLoad) {
+        if (uniqueId != node.uniqueId && dep.stage == Stage::EXECUTE && dep.isLoad && !isStore) {
             if ((rs1 != 0 && rs1 == dep.reg) || (hasRS2 && rs2 != 0 && rs2 == dep.reg)) {
                 logs[200] = "Load-Use Hazard: Instruction at PC=" + std::to_string(node.PC) + " (" + textMap[node.PC].second + ") depends on load at PC=" + std::to_string(dep.pc) + " (rd=" + std::to_string(dep.reg) + ")";
                 stats.stallBubbles++;
@@ -472,8 +507,8 @@ void Simulator::advancePipeline() {
                 
             case Stage::EXECUTE:
                 {
-                    loadUseHazard = checkLoadUseHazard(*node, depsSnapshot);
-                    if (loadUseHazard) {
+                    loadUseHazard = checkLoadUseHazard(*node, depsSnapshot, node->isStore);
+                    if (loadUseHazard && !node->isStore) {
                         node->stalled = true;
                         newPipeline[Stage::EXECUTE] = node;
                         pipeline[stage] = nullptr;
@@ -527,6 +562,7 @@ void Simulator::advancePipeline() {
                 
             case Stage::MEMORY:
                 {
+                    applyDataForwarding(*node, depsSnapshot);
                     memoryAccess(node, instructionRegisters, registers, dataMap);
                     updateDependencies(*node, Stage::MEMORY);
                     node->stage = Stage::WRITEBACK;

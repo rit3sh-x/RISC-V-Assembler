@@ -31,11 +31,12 @@ namespace riscv {
 
     struct PipelineDiagramInfo {
         bool ExExForwarding;
+        bool MemMemForwarding;
         bool MemExForwarding;
         bool BranchToFetch;
         bool ExToBranch;
 
-        PipelineDiagramInfo() : ExExForwarding(false), MemExForwarding(false), BranchToFetch(false), ExToBranch(false) {}
+        PipelineDiagramInfo() : ExExForwarding(false), MemMemForwarding(false), MemExForwarding(false), BranchToFetch(false), ExToBranch(false) {}
     };
 
     inline const std::vector<Stage> reverseStageOrder = { Stage::WRITEBACK, Stage::MEMORY, Stage::EXECUTE, Stage::DECODE, Stage::FETCH };
@@ -213,18 +214,18 @@ namespace riscv {
         uint32_t PC, opcode, rs1, rs2, rd, instruction, func3, func7;
         InstructionType instructionType;
         Stage stage;
-        bool stalled, isBranch, isJump, isLoad;
+        bool stalled, isBranch, isJump, isLoad, isStore;
         Instructions instructionName;
         uint32_t uniqueId;
     
         InstructionNode(uint32_t pc = 0) 
-            : PC(pc), opcode(0), rs1(0), rs2(0), rd(0), instruction(0), func3(0), func7(0), stage(Stage::FETCH), stalled(false), isBranch(false), isJump(false), isLoad(false), instructionName(Instructions::INVALID), uniqueId(0){}
+            : PC(pc), opcode(0), rs1(0), rs2(0), rd(0), instruction(0), func3(0), func7(0), stage(Stage::FETCH), stalled(false), isBranch(false), isJump(false), isLoad(false), isStore(false), instructionName(Instructions::INVALID), uniqueId(0){}
 
         InstructionNode(const InstructionNode& other)
             : PC(other.PC), opcode(other.opcode), rs1(other.rs1), rs2(other.rs2), rd(other.rd), 
               instruction(other.instruction), func3(other.func3), func7(other.func7),
               instructionType(other.instructionType), stage(other.stage), 
-              stalled(other.stalled), isBranch(other.isBranch), isJump(other.isJump), isLoad(other.isLoad), 
+              stalled(other.stalled), isBranch(other.isBranch), isJump(other.isJump), isLoad(other.isLoad), isStore(other.isStore), 
               instructionName(other.instructionName), uniqueId(other.uniqueId) {}
     };
 

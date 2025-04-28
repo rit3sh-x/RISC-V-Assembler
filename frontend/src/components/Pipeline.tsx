@@ -7,12 +7,14 @@ interface PipelineDiagramProps {
     memoryStart?: boolean;
     writebackStart?: boolean;
     exEx?: boolean;
+    memMem?: boolean;
     memEx?: boolean;
     branchFetch?: boolean;
     branchExecute?: boolean;
     arrowData?: boolean;
     arrowBranch?: boolean;
     arrowFetch?: boolean;
+    arrowMemory?: boolean;
     svgData?: string | null;
 }
 
@@ -23,11 +25,13 @@ export const PipelineDiagram: React.FC<PipelineDiagramProps> = ({
     memoryStart = false,
     writebackStart = false,
     exEx = false,
+    memMem = false,
     memEx = false,
     branchFetch = false,
     branchExecute = false,
     arrowData = false,
     arrowBranch = false,
+    arrowMemory = false,
     arrowFetch = false,
     svgData = null,
 }) => {
@@ -83,11 +87,13 @@ export const PipelineDiagram: React.FC<PipelineDiagramProps> = ({
             toggleGrayscale('memory-start', memoryStart);
             toggleGrayscale('writeback-start', writebackStart);
             updateOpacity('ex-ex', exEx);
+            updateOpacity('mem-mem', memMem);
             updateOpacity('mem-ex', memEx);
             updateOpacity('branch-fetch', branchFetch);
             updateOpacity('branch-execute', branchExecute);
             updateOpacity('arrow-data', arrowData);
             updateOpacity('arrow-branch', arrowBranch);
+            updateOpacity('arrow-memory', arrowMemory);
             updateOpacity('arrow-fetch', arrowFetch);
 
             svgContainerRef.current.innerHTML = '';

@@ -13,7 +13,7 @@ declare namespace createSimulator {
     RM: number;
     RY: number;
     RZ: number;
-  
+
     constructor(RA?: number, RB?: number, RM?: number, RY?: number, RZ?: number);
   }
 
@@ -42,6 +42,7 @@ declare namespace createSimulator {
 
   export interface PipelineDiagramInfo {
     ExExForwarding: boolean;
+    MemMemForwarding: boolean;
     MemExForwarding: boolean;
     BranchToFetch: boolean;
     ExToBranch: boolean;

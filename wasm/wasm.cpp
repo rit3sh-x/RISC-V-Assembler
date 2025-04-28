@@ -82,6 +82,8 @@ val simulationStatsToVal(const SimulationStats& stats) {
 val pipelineDiagramInfoToVal(const PipelineDiagramInfo& info) {
     val result = val::object();
     result.set("ExExForwarding", info.ExExForwarding);
+    result.set("MemMemForwarding", info.MemMemForwarding);
+    result.set("ExExForwarding", info.ExExForwarding);
     result.set("MemExForwarding", info.MemExForwarding);
     result.set("BranchToFetch", info.BranchToFetch);
     result.set("ExToBranch", info.ExToBranch);
@@ -191,6 +193,7 @@ EMSCRIPTEN_BINDINGS(simulator_module) {
 
     value_object<PipelineDiagramInfo>("PipelineDiagramInfo")
         .field("ExExForwarding", &PipelineDiagramInfo::ExExForwarding)
+        .field("MemMemForwarding", &PipelineDiagramInfo::MemMemForwarding)
         .field("MemExForwarding", &PipelineDiagramInfo::MemExForwarding)
         .field("BranchToFetch", &PipelineDiagramInfo::BranchToFetch)
         .field("ExToBranch", &PipelineDiagramInfo::ExToBranch);

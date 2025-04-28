@@ -49,7 +49,7 @@ private:
     void applyDataForwarding(InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot);
     bool checkDependencies(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot) const;
     void updateDependencies(InstructionNode& node, Stage stage);
-    bool checkLoadUseHazard(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot);
+    bool checkLoadUseHazard(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot, bool isStore = false);
     bool isPipelineEmpty() const;
     void reset();
     
@@ -175,6 +175,36 @@ void Simulator::applyDataForwarding(InstructionNode& node, const std::unordered_
 
     forwardingStatus = ForwardingStatus();
 
+    if (node.stage == Stage::MEMORY) {
+        for (const auto& [uniqueId, dep] : depsSnapshot) {
+            if (dep.stage == Stage::MEMORY && dep.reg != 0 && dep.isLoad) {
+                if (node.rs1 != 0 && node.rs1 == dep.reg && !forwardingStatus.raForwarded) {
+                    instructionRegisters.RA = dep.value;
+                    forwardingStatus.raForwarded = true;
+                    std::cout << YELLOW << "\nData Forwarding: MEM->MEM for rs1 (reg " << node.rs1
+                              << ") of instruction at PC=" << node.PC << " (" << textMap[node.PC].second << ")"
+                              << (dep.isLoad ? " [Load]" : "") << " from instruction (" << textMap[dep.pc].second << ")" << RESET << std::endl;
+                }
+                if (node.rs2 != 0 && node.rs2 == dep.reg && !forwardingStatus.rbForwarded && !forwardingStatus.rmForwarded) {
+                    if (node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB) {
+                        instructionRegisters.RM = dep.value;
+                        forwardingStatus.rmForwarded = true;
+                        std::cout << YELLOW << "\nData Forwarding: MEM->MEM for rs2 (reg " << node.rs2
+                                  << ") to RM of instruction at PC=" << node.PC << " (" << textMap[node.PC].second << ")"
+                                  << (dep.isLoad ? " [Load]" : "") << " from instruction (" << textMap[dep.pc].second << ")" << RESET << std::endl;
+                    } else {
+                        instructionRegisters.RB = dep.value;
+                        forwardingStatus.rbForwarded = true;
+                        std::cout << YELLOW << "\nData Forwarding: MEM->MEM for rs2 (reg " << node.rs2
+                                  << ") of instruction at PC=" << node.PC << " (" << textMap[node.PC].second << ")"
+                                  << (dep.isLoad ? " [Load]" : "") << " from instruction (" << textMap[dep.pc].second << ")" << RESET << std::endl;
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     for (const auto& [uniqueId, dep] : depsSnapshot) {
         if (dep.stage == Stage::EXECUTE && dep.reg != 0) {
             if (!dep.isLoad) {
@@ -259,7 +289,7 @@ bool Simulator::checkDependencies(const InstructionNode& node, const std::unorde
     return false;
 }
 
-bool Simulator::checkLoadUseHazard(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot) {
+bool Simulator::checkLoadUseHazard(const InstructionNode& node, const std::unordered_map<uint32_t, RegisterDependency>& depsSnapshot, bool isStore) {
     if (!isPipeline) {
         return false;
     }
@@ -269,10 +299,9 @@ bool Simulator::checkLoadUseHazard(const InstructionNode& node, const std::unord
     bool hasRS2 = (node.instructionType == InstructionType::R || node.instructionType == InstructionType::S || node.instructionType == InstructionType::SB);
 
     for (const auto& [uniqueId, dep] : depsSnapshot) {
-        if (uniqueId != node.uniqueId && dep.stage == Stage::EXECUTE && dep.isLoad) {
+        if (uniqueId != node.uniqueId && dep.stage == Stage::EXECUTE && dep.isLoad && !isStore) {
             if ((rs1 != 0 && rs1 == dep.reg) || (hasRS2 && rs2 != 0 && rs2 == dep.reg)) {
                 std::cout << GREEN << "Load-Use Hazard: Instruction at PC=" << node.PC << " (" << textMap[node.PC].second << ") depends on load at PC=" << dep.pc << " (rd=" << dep.reg << ")" << RESET << std::endl;
-
                 stats.stallBubbles++;
                 stats.dataHazardStalls++;
                 return true;
@@ -299,7 +328,7 @@ void Simulator::updateDependencies(InstructionNode& node, Stage stage) {
             registerDependencies[node.uniqueId].stage = stage;
             registerDependencies[node.uniqueId].value = instructionRegisters.RY;
         }
-    } 
+    }
     else if (stage == Stage::MEMORY && node.rd != 0) {
         if (registerDependencies.find(node.uniqueId) != registerDependencies.end()) {
             registerDependencies[node.uniqueId].stage = stage;
@@ -455,7 +484,7 @@ void Simulator::advancePipeline() {
                 
             case Stage::EXECUTE:
                 {
-                    loadUseHazard = checkLoadUseHazard(*node, depsSnapshot);
+                    loadUseHazard = checkLoadUseHazard(*node, depsSnapshot, node->isStore);
                     if (loadUseHazard) {
                         node->stalled = true;
                         newPipeline[Stage::EXECUTE] = new InstructionNode(*node);
@@ -521,6 +550,7 @@ void Simulator::advancePipeline() {
                 
             case Stage::MEMORY:
                 {
+                    applyDataForwarding(*node, depsSnapshot);
                     memoryAccess(node, instructionRegisters, registers, dataMap);
                     updateDependencies(*node, Stage::MEMORY);
 
@@ -620,7 +650,6 @@ void Simulator::run() {
             break;
         }
     }
-    std::cout << GREEN << "Program execution completed" << RESET << std::endl;
 }
 
 void Simulator::setEnvironment(bool pipeline, bool dataForwarding, bool branchPrediction, uint32_t instruction) {

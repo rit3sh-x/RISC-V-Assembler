@@ -28,6 +28,7 @@ enum Stage {
 
 interface PipelineDiagramInfo {
   ExExForwarding: boolean;
+  MemMemForwarding: boolean;
   MemExForwarding: boolean;
   BranchToFetch: boolean;
   ExToBranch: boolean;
@@ -348,6 +349,7 @@ export default function Simulator({
   });
   const [pipelineDiag, setPipelineDiag] = useState<PipelineDiagramInfo>({
     ExExForwarding: false,
+    MemMemForwarding: false,
     MemExForwarding: false,
     BranchToFetch: false,
     ExToBranch: false
@@ -901,11 +903,13 @@ export default function Simulator({
                         memoryStart={activeStates[Stage.MEMORY].active}
                         writebackStart={activeStates[Stage.WRITEBACK].active}
                         exEx={pipelineDiag.ExExForwarding}
+                        memMem={pipelineDiag.MemMemForwarding}
                         memEx={pipelineDiag.MemExForwarding}
                         branchFetch={pipelineDiag.BranchToFetch}
                         branchExecute={pipelineDiag.ExToBranch}
                         arrowData={pipelineDiag.ExExForwarding || pipelineDiag.MemExForwarding}
                         arrowBranch={pipelineDiag.ExToBranch}
+                        arrowMemory={pipelineDiag.MemMemForwarding}
                         arrowFetch={pipelineDiag.BranchToFetch}
                         svgData={pipelineSvg}
                       />

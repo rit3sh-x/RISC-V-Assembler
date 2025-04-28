@@ -256,6 +256,11 @@ inline void decodeInstruction(InstructionNode* node, InstructionRegisters& instr
         case Instructions::LW:
             node->isLoad = true;
             break;
+        case Instructions::SB:
+        case Instructions::SH:
+        case Instructions::SW:
+            node->isStore = true;
+            break;
         default:
             break;
     }

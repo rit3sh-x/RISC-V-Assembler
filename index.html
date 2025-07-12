@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RISC-V Assembler & Simulator</title>
+    <link rel="stylesheet" href="https://latex.vercel.app/style.min.css" />
+    <link rel="stylesheet" href="https://latex.vercel.app/prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/prismjs/prism.min.js"></script>
+</head>
+
+<body class="text-justify latex-auto">
+    <header>
+        <h1> RISC-V Assembler & Simulator</h1>
+        <p class="author">
+            Ritesh Kumar (2023CSB1153)<br>
+            Ruhaan Choudhary (2023CSB1156)<br>
+            Sumit Yadav (2023CSB1167)<br>
+        </p>
+        <p style="text-align:center;">
+            <a href="https://github.com/rit3sh-x/RISC-V-Aseembler" target="_blank">GitHub Repository</a>
+        </p>
+    </header>
+
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>
+            This project consists of a comprehensive RISC-V assembler and simulator written in C++. The assembler translates RISC-V assembly language code into machine code, while the simulator executes this machine code in a virtual RISC-V environment. The project features a modern web-based frontend built with NextJS that leverages WebAssembly to run the simulator directly in browsers, providing near-native performance for educational and development purposes.
+        </p>
+    </div>
+
+    <nav role="navigation" class="toc">
+        <h2>Contents</h2>
+        <ol>
+            <li><a href="#overview">Overview & Components</a></li>
+            <li><a href="#architecture">System Architecture</a></li>
+            <li><a href="#simulator-design">Simulator Core Design</a></li>
+            <li><a href="#assembler-implementation">Assembler Implementation</a></li>
+            <li><a href="#project-files">Project Structure & Files</a></li>
+            <li><a href="#webassembly">WebAssembly Integration</a></li>
+            <li><a href="#usage">Usage & Examples</a></li>
+        </ol>
+    </nav>
+
+    <main>
+        <article>
+            <h2 id="overview">Overview & Components</h2>
+            <p>
+                The RISC-V Assembler & Simulator is a comprehensive educational tool designed to help students and developers understand the RISC-V instruction set architecture. The project consists of three main components working together to provide a complete development and simulation environment.
+            </p>
+
+            <h3> Assembler Component</h3>
+            <p>The assembler (<code>src/assembler.cpp</code>) translates RISC-V assembly code into machine code and provides:</p>
+            <ul>
+                <li><b>Lexical Analysis:</b> Tokenizes assembly code into meaningful components</li>
+                <li><b>Parsing:</b> Converts tokens into intermediate representation with symbol table management</li>
+                <li><b>Code Generation:</b> Produces executable machine code for all RISC-V instruction types</li>
+                <li><b>Debugging Support:</b> Outputs readable machine code files with instruction decoding information</li>
+            </ul>
+
+            <h3> Simulator Component</h3>
+            <p>The simulator (<code>src/simulator.cpp</code>) executes RISC-V machine code in a virtual environment featuring:</p>
+            <ul>
+                <li><b>Instruction Execution:</b> Step-by-step execution with detailed logging</li>
+                <li><b>State Monitoring:</b> Real-time register and memory state tracking</li>
+                <li><b>Pipeline Simulation:</b> 5-stage pipeline with hazard detection and resolution</li>
+                <li><b>Interactive Debugging:</b> Console output for comprehensive debugging information</li>
+            </ul>
+
+            <h3> Web Frontend</h3>
+            <p>The NextJS web interface provides a modern, browser-based development environment that allows users to:</p>
+            <ul>
+                <li>Write and edit RISC-V assembly code with syntax highlighting</li>
+                <li>Assemble code to machine code with error reporting</li>
+                <li>Simulate execution with visual feedback and state visualization</li>
+                <li>Observe register and memory states during program execution</li>
+            </ul>
+
+            <h2 id="architecture">System Architecture</h2>
+            <p>
+                The RISC-V Assembler and Simulator follows a modular pipeline architecture that separates concerns and enables easy extension and maintenance.
+            </p>
+
+            <h3>Directory Structure</h3>
+            <pre><code class="language-bash">
+RISC-V-Assembler/
+├── src/                     # Core C++ implementation
+│   ├── assembler.cpp        # Assembler implementation
+│   ├── assembler.hpp        # Assembler class definitions
+│   ├── simulator.cpp        # Simulator implementation
+│   ├── simulator.hpp        # Simulator class definitions
+│   ├── types.hpp            # Core types and constants
+│   ├── lexer.hpp            # Lexical analyzer for tokenizing assembly
+│   ├── parser.hpp           # Parser for processing tokens
+│   └── execution.hpp        # Execution logic for simulation
+├── wasm/                    # WebAssembly integration
+│   ├── wasm.cpp             # WebAssembly bindings
+│   └── [header files]       # Shared header files
+└── frontend/                # NextJS web application
+    ├── public/              # Static assets and compiled WASM
+    ├── src/                 # React components and pages
+    └── [config files]       # Project configuration
+            </code></pre>
+
+            <h3>Processing Pipeline</h3>
+            <p>The system follows a clear data flow pipeline:</p>
+            <ol>
+                <li><b>Source Code</b> → Assembly file (.asm)</li>
+                <li><b>Lexical Analysis</b> → Tokens via lexer.hpp</li>
+                <li><b>Parsing</b> → Structured representation via parser.hpp</li>
+                <li><b>Assembly</b> → Machine code (.mc) via assembler.cpp</li>
+                <li><b>Simulation</b> → Execution via simulator.cpp with state tracking</li>
+                <li><b>Visualization</b> → Web interface displaying execution state</li>
+            </ol>
+
+            <h2 id="simulator-design">Simulator Core Design</h2>
+            <p>
+                The simulator implements a complete RISC-V processor core with all essential components for accurate instruction execution and debugging.
+            </p>
+
+            <h3>Core Components</h3>
+            <h4>1. Register File</h4>
+            <ul>
+                <li>32 general-purpose registers (x0-x31)</li>
+                <li>x0 hardwired to zero as per RISC-V specification</li>
+                <li>Program Counter (PC) for instruction sequencing</li>
+            </ul>
+
+            <h4>2. Memory System</h4>
+            <ul>
+                <li>Segmented memory with separate text and data sections</li>
+                <li>4KB page-aligned addressing for efficient memory management</li>
+                <li>Support for byte, half-word, and word access patterns</li>
+            </ul>
+
+            <h4>3. Instruction Pipeline</h4>
+            <p>The simulator implements a 5-stage pipeline architecture:</p>
+            <ul>
+                <li><b>Fetch:</b> Retrieve instruction from memory</li>
+                <li><b>Decode:</b> Parse instruction and read registers</li>
+                <li><b>Execute:</b> Perform ALU operations and address calculations</li>
+                <li><b>Memory:</b> Access data memory for loads and stores</li>
+                <li><b>Write-back:</b> Write results to register file</li>
+            </ul>
+
+            <h3>Instruction Set Support</h3>
+            <p>The simulator supports all basic RISC-V instruction formats:</p>
+            <pre><code class="language-assembly">
+# R-type Instructions
+add, sub, sll, slt, sltu, xor, srl, sra, or, and
+
+# I-type Instructions  
+addi, slti, sltiu, xori, ori, andi, slli, srli, srai
+lb, lh, lw, lbu, lhu, jalr
+
+# S-type Instructions
+sb, sh, sw
+
+# B-type Instructions
+beq, bne, blt, bge, bltu, bgeu
+
+# U-type Instructions
+lui, auipc
+
+# J-type Instructions
+jal
+            </code></pre>
+
+            <h3>Operating Modes</h3>
+            <ul>
+                <li><b>Interactive Mode:</b> Step-through execution with state visualization</li>
+                <li><b>Batch Mode:</b> Complete program execution with final state reporting</li>
+            </ul>
+
+            <h2 id="assembler-implementation">Assembler Implementation</h2>
+            <p>
+                The assembler converts RISC-V assembly code into executable machine code through a sophisticated multi-stage process.
+            </p>
+
+            <h3>Assembly Process Stages</h3>
+            <h4>1. Lexical Analysis</h4>
+            <pre><code class="language-cpp">
+// Example: Tokenizing assembly instructions
+// Input: "addi x1, x0, 100"
+// Tokens: [OPCODE:"addi", REGISTER:"x1", REGISTER:"x0", IMMEDIATE:"100"]
+            </code></pre>
+            <p>Features include:</p>
+            <ul>
+                <li>Tokenization of assembly code into meaningful components</li>
+                <li>Recognition of opcodes, registers, immediates, labels, and directives</li>
+                <li>Handling of special cases like string literals and comments</li>
+                <li>Syntax error reporting with line numbers for debugging</li>
+            </ul>
+
+            <h4>2. Parsing & Symbol Resolution</h4>
+            <pre><code class="language-assembly">
+# Example assembly with labels
+main:
+    addi x1, x0, 10
+    beq x1, x0, end
+    jal x1, main
+end:
+    addi x2, x0, 0
+            </code></pre>
+            <p>The two-pass parsing algorithm:</p>
+            <ul>
+                <li><b>First Pass:</b> Builds symbol table and allocates addresses</li>
+                <li><b>Second Pass:</b> Resolves label references and validates operands</li>
+                <li>Handles forward references and pseudo-instructions</li>
+                <li>Generates parsed instruction objects with validated operands</li>
+            </ul>
+
+            <h4>3. Code Generation</h4>
+            <p>The code generator handles different instruction formats:</p>
+            <pre><code class="language-cpp">
+// R-type instruction encoding
+// add x1, x2, x3 → 0x003100B3
+uint32_t encodeRType(uint8_t rd, uint8_t rs1, uint8_t rs2, 
+                     uint8_t funct3, uint8_t funct7, uint8_t opcode) {
+    return (funct7 << 25) | (rs2 << 20) | (rs1 << 15) | 
+           (funct3 << 12) | (rd << 7) | opcode;
+}
+            </code></pre>
+
+            <h2 id="project-files">Project Structure & Files</h2>
+            <p>The project is organized into specialized modules, each handling specific functionality:</p>
+
+            <h3>Core Header Files</h3>
+            <h4> types.hpp</h4>
+            <p>Defines fundamental types and constants:</p>
+            <ul>
+                <li>Memory segment addresses and sizes</li>
+                <li>Register count and instruction size constants</li>
+                <li>Enums for instruction types, token types, and pipeline stages</li>
+                <li>RISC-V instruction encodings and utility functions</li>
+            </ul>
+
+            <h4> lexer.hpp</h4>
+            <p>Lexical analyzer for token generation:</p>
+            <ul>
+                <li>Assembly code tokenization into opcodes, registers, immediates</li>
+                <li>Comment and string literal handling</li>
+                <li>Token validation and syntax error reporting</li>
+                <li>Support for all RISC-V register names and mnemonics</li>
+            </ul>
+
+            <h4> parser.hpp</h4>
+            <p>Parser for structured representation:</p>
+            <ul>
+                <li>Two-pass parsing for forward reference resolution</li>
+                <li>Symbol table management for labels and data</li>
+                <li>Directive handling for memory segments</li>
+                <li>Semantic analysis and instruction object building</li>
+            </ul>
+
+            <h4> execution.hpp</h4>
+            <p>Core execution logic:</p>
+            <ul>
+                <li>Pipeline stage functions (fetch, decode, execute, memory, writeback)</li>
+                <li>Memory access and register file management</li>
+                <li>Instruction decoding and execution</li>
+                <li>Branch prediction and simulation statistics</li>
+            </ul>
+
+            <h2 id="webassembly">WebAssembly Integration</h2>
+            <p>
+                The project leverages Emscripten to compile the C++ simulator to WebAssembly, enabling high-performance execution in web browsers.
+            </p>
+
+            <h3>Compilation Process</h3>
+            <pre><code class="language-bash">
+# Compile C++ simulator to WebAssembly
+emcc -O2 -s WASM=1 -s MODULARIZE=1 \
+     -s EXPORT_NAME="createSimulator" \
+     -s ALLOW_MEMORY_GROWTH=1 \
+     -s NO_EXIT_RUNTIME=1 \
+     --bind -I. wasm/wasm.cpp \
+     -o frontend/simulator.js
+            </code></pre>
+
+            <h3>Compilation Features</h3>
+            <ul>
+                <li><b>Optimization:</b> <code>-O2</code> flag for performance optimization</li>
+                <li><b>Modularity:</b> <code>MODULARIZE=1</code> for clean NextJS integration</li>
+                <li><b>Memory Management:</b> <code>ALLOW_MEMORY_GROWTH=1</code> for dynamic allocation</li>
+                <li><b>Bindings:</b> <code>--bind</code> for JavaScript API generation</li>
+            </ul>
+
+            <h3>JavaScript API</h3>
+            <p>The WebAssembly module exposes a clean JavaScript API for web integration:</p>
+            <pre><code class="language-javascript">
+// Initialize the simulator
+const simulator = await createSimulator();
+
+// Load assembly code
+simulator.loadProgram(assemblyCode);
+
+// Execute single step
+const state = simulator.step();
+
+// Get register values
+const registers = simulator.getRegisters();
+
+// Get memory contents
+const memory = simulator.getMemory(address, size);
+            </code></pre>
+
+            <h2 id="usage">Usage & Examples</h2>
+            <p>The RISC-V Assembler & Simulator can be used in multiple ways depending on your needs.</p>
+
+            <h3> Using the Assembler</h3>
+            <h4>1. Compilation</h4>
+            <pre><code class="language-bash">
+g++ -o riscv_assembler ./src/assembler.cpp
+            </code></pre>
+
+            <h4>2. Assembly Example</h4>
+            <pre><code class="language-bash">
+# Assemble a program
+./riscv_assembler program.asm output.mc
+
+# Example program.asm content:
+main:
+    addi x1, x0, 10      # Load immediate 10 into x1
+    addi x2, x0, 20      # Load immediate 20 into x2
+    add x3, x1, x2       # Add x1 and x2, store in x3
+    sw x3, 0(x0)         # Store x3 to memory address 0
+    beq x3, x0, end      # Branch to end if x3 equals 0
+end:
+    nop                  # No operation
+            </code></pre>
+
+            <h3> Using the Simulator</h3>
+            <h4>1. Compilation</h4>
+            <pre><code class="language-bash">
+g++ -o riscv_simulator ./src/simulator.cpp
+            </code></pre>
+
+            <h4>2. Simulation Options</h4>
+            <pre><code class="language-bash">
+# Basic simulation
+./riscv_simulator -i program.asm
+
+# Advanced simulation with features
+./riscv_simulator -i program.asm -r -d -p
+# -r: Print register values
+# -d: Enable data forwarding  
+# -p: Print full pipeline state
+            </code></pre>
+
+            <h4>3. Command-Line Options</h4>
+            <ul>
+                <li><code>-p, --pipeline</code>: Print full pipeline state each cycle</li>
+                <li><code>-d, --data-forwarding</code>: Enable data forwarding optimization</li>
+                <li><code>-r, --registers</code>: Print register values during execution</li>
+                <li><code>-b, --branch-predict</code>: Enable branch prediction</li>
+                <li><code>-a, --auto</code>: Run simulation automatically (non-interactive)</li>
+                <li><code>-f, --follow NUM</code>: Track specific instruction by number</li>
+            </ul>
+
+            <h3> Using the Web Frontend</h3>
+            <h4>1. Setup</h4>
+            <pre><code class="language-bash">
+# Compile to WebAssembly
+emcc ./src/simulator.cpp -o public/simulator.js \
+     --bind -s MODULARIZE=1 -s EXPORT_NAME="createSimulator" -O2
+
+# Install dependencies
+cd frontend && npm install
+
+# Start development server
+npm run dev
+            </code></pre>
+
+            <h4>2. Production Build</h4>
+            <pre><code class="language-bash">
+npm run build
+npm run start
+            </code></pre>
+
+            <p>The web interface provides an intuitive environment for writing, assembling, and simulating RISC-V programs with real-time visualization of processor state and execution flow.</p>
+        </article>
+    </main>
+</body>
+</html>

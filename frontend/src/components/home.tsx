@@ -1,6 +1,6 @@
 "use client";
 
-import { Editor } from "./editor";
+import { Editor } from "./monaco";
 import { Simulator } from "./simulator";
 import { Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 import { useState, useEffect } from "react";

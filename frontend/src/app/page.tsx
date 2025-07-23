@@ -4,7 +4,7 @@ import { Navbar } from '@/components/navbar';
 import dynamic from 'next/dynamic';
 
 const Landing = dynamic(
-  () => import('@/components/landing'),
+  () => import('@/components/home'),
   { ssr: false }
 );
 

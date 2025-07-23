@@ -47,7 +47,7 @@ export const PipelineDiagram: React.FC<PipelineDiagramProps> = ({
             svgElement.setAttribute('width', '100%');
             svgElement.setAttribute('height', '100%');
             svgElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-            
+
             const updateOpacity = (id: string, isVisible: boolean) => {
                 const element = svgElement.getElementById(id);
                 if (element) {
@@ -111,7 +111,7 @@ export const PipelineDiagram: React.FC<PipelineDiagramProps> = ({
             svgRoot.setAttribute('height', '100%');
             svgRoot.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         }
-        
+
         const updateOpacity = (id: string, isVisible: boolean) => {
             const element = svgDoc.getElementById(id);
             if (element) {
@@ -173,6 +173,8 @@ export const PipelineDiagram: React.FC<PipelineDiagramProps> = ({
         arrowBranch,
         arrowFetch,
         svgData,
+        arrowMemory,
+        memMem
     ]);
 
     useEffect(() => {
@@ -197,36 +199,12 @@ export const PipelineDiagram: React.FC<PipelineDiagramProps> = ({
     }, [updateSvgElements, svgData]);
 
     return (
-        <div style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
-            {svgData ? (
+        <div className="w-full h-full flex items-center justify-center overflow-hidden relative">
+            {svgData && (
                 <div
                     ref={svgContainerRef}
-                    className="pipeline-svg"
+                    className="h-full flex items-center justify-center"
                     aria-label="Pipeline Diagram"
-                    style={{ 
-                        width: '100%', 
-                        height: '100%', 
-                        maxWidth: '100%', 
-                        maxHeight: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                    }}
-                />
-            ) : (
-                <object
-                    ref={objectRef}
-                    type="image/svg+xml"
-                    data="/pipeline.svg"
-                    className="pipeline-svg"
-                    aria-label="Pipeline Diagram"
-                    style={{ 
-                        width: '100%', 
-                        height: '100%', 
-                        maxWidth: '100%', 
-                        maxHeight: '100%',
-                        objectFit: 'contain'
-                    }}
                 />
             )}
         </div>

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import type { Simulator, SimulatorModuleInstance } from '@/types/simulator';
 
 interface WindowWithSimulator extends Window {
   createSimulator?: () => Promise<SimulatorModuleInstance>;

@@ -1,6 +1,6 @@
 import { useSimulator } from "@/store/zustand";
 import { FileUp, Github } from "lucide-react";
-import { Sidebar } from "./sidebar";
+import { Sidebar } from "./sidebar-modal";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";

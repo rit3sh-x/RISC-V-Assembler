@@ -17,13 +17,6 @@ export const Editor = ({ text, setText }: EditorProps) => {
     const currentTheme = useCurrentTheme();
 
     useEffect(() => {
-        const savedCode = localStorage.getItem('riscvMachineCode');
-        if (savedCode) {
-            setText(savedCode);
-        }
-    }, [setText]);
-
-    useEffect(() => {
         if (editorRef.current && isEditorReady) {
             const resizeEditor = () => {
                 if (editorRef.current) {

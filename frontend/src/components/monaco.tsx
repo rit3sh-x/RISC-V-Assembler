@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import MonacoEditor from '@monaco-editor/react';
 import { editor } from 'monaco-editor';
 import { useCurrentTheme } from '@/hooks/use-current-theme';
+import { Skeleton } from './ui/skeleton';
 
 interface EditorProps {
     text: string;
@@ -96,7 +97,7 @@ export const Editor = ({ text, setText }: EditorProps) => {
         });
     };
 
-    const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
+    const handleEditorDidMount = async (editor: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
         editorRef.current = editor;
 
         monaco.languages.register({ id: 'riscv-assembly' });
@@ -130,46 +131,83 @@ export const Editor = ({ text, setText }: EditorProps) => {
         const initialTheme = currentTheme === 'dark' ? 'riscv-dark-theme' : 'riscv-light-theme';
         monaco.editor.setTheme(initialTheme);
 
-        setIsEditorReady(true);
         editor.focus();
+        setIsEditorReady(true);
     };
 
     const handleEditorChange = (value: string | undefined) => {
         if (value !== undefined) {
             setText(value);
-            localStorage.setItem('riscvMachineCode', value);
         }
     };
 
     return (
-        <div className="rounded-2xl h-full w-full shadow-lg overflow-hidden border border-border">
-            <MonacoEditor
-                height="100%"
-                language="riscv-assembly"
-                theme={currentTheme === 'dark' ? 'riscv-dark-theme' : 'riscv-light-theme'}
-                value={text}
-                onChange={handleEditorChange}
-                onMount={handleEditorDidMount}
-                options={{
-                    minimap: { enabled: false },
-                    scrollBeyondLastLine: false,
-                    fontSize: 16,
-                    wordWrap: 'on',
-                    lineNumbers: 'on',
-                    renderLineHighlight: 'all',
-                    scrollbar: {
-                        vertical: 'auto',
-                        horizontal: 'auto',
-                        verticalScrollbarSize: 6,
-                        horizontalScrollbarSize: 6,
-                    },
-                    roundedSelection: true,
-                    automaticLayout: true,
-                    padding: {
-                        top: 16,
-                    },
-                }}
-            />
+        <div className="rounded-2xl h-full w-full shadow-lg overflow-hidden border border-border relative">
+            {!isEditorReady && <EditorSkeleton />}
+            <div className={`h-full w-full ${!isEditorReady ? 'opacity-0' : 'opacity-100'} transition-opacity duration-200`}>
+                <MonacoEditor
+                    height="100%"
+                    language="riscv-assembly"
+                    theme={currentTheme === 'dark' ? 'riscv-dark-theme' : 'riscv-light-theme'}
+                    value={text}
+                    onChange={handleEditorChange}
+                    onMount={handleEditorDidMount}
+                    loading={<EditorSkeleton />}
+                    options={{
+                        minimap: { enabled: false },
+                        scrollBeyondLastLine: false,
+                        fontSize: 16,
+                        wordWrap: 'on',
+                        lineNumbers: 'on',
+                        renderLineHighlight: 'all',
+                        scrollbar: {
+                            vertical: 'auto',
+                            horizontal: 'auto',
+                            verticalScrollbarSize: 6,
+                            horizontalScrollbarSize: 6,
+                        },
+                        roundedSelection: true,
+                        automaticLayout: true,
+                        padding: {
+                            top: 16,
+                        },
+                    }}
+                />
+            </div>
+        </div>
+    );
+};
+
+const EditorSkeleton = () => {
+    const [lineWidths, setLineWidths] = useState<string[]>([]);
+
+    useEffect(() => {
+        setLineWidths(
+            Array.from({ length: 8 }, () =>
+                `${Math.floor(Math.random() * 41) + 10}%`
+            )
+        );
+    }, []);
+
+    return (
+        <div className="absolute inset-0 rounded-2xl h-full w-full shadow-lg overflow-hidden border border-border flex items-center justify-center bg-background font-mono z-10">
+            <Skeleton className="w-full h-full" />
+            <div className="absolute top-8 left-8 right-8 flex flex-col gap-3 pointer-events-none">
+                {lineWidths.map((width, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                        <div
+                            className="w-6 text-right text-muted-foreground select-none"
+                            style={{ opacity: 0.7 }}
+                        >
+                            {i + 1}
+                        </div>
+                        <div
+                            className="h-5 bg-border animate-pulse rounded"
+                            style={{ width }}
+                        />
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
